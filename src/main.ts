@@ -1,4 +1,5 @@
 import { createRenderer } from "./renderer";
+import { LoopPlayer } from "./loop-player";
 import { editorTemplate } from "./ui/editor";
 import { convertFileSrc, invoke, isTauri } from "@tauri-apps/api/core";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
@@ -43,9 +44,35 @@ const $ = <T extends HTMLElement>(id: string) =>
   document.querySelector<T>(`#${id}`)!;
 
 refreshIcons();
-const video = $("video") as HTMLVideoElement,
-  canvas = $("overlay") as HTMLCanvasElement;
-const renderPreview = createRenderer(canvas, video);
+let video = $("video") as HTMLVideoElement;
+const canvas = $("overlay") as HTMLCanvasElement;
+const standby = document.createElement("video");
+standby.className = "loop-standby";
+video.parentElement!.insertBefore(standby, canvas);
+const player = new LoopPlayer([video, standby], {
+  change(active, event) {
+    video = active;
+    if (["play", "playing", "swap"].includes(event)) animate();
+    if (["pause", "ended", "source"].includes(event))
+      cancelAnimationFrame(animationFrame);
+    if (
+      [
+        "loadedmetadata",
+        "loadeddata",
+        "seeked",
+        "swap",
+        "pause",
+        "ended",
+      ].includes(event)
+    )
+      draw();
+    updateTransport();
+  },
+  error(error) {
+    $("state").textContent = "再生できませんでした：" + String(error);
+  },
+});
+const renderPreview = createRenderer(canvas, () => video);
 let root = "",
   entries: VideoEntry[] = [],
   current: VideoEntry | null = null,
@@ -182,18 +209,12 @@ async function select(entry: VideoEntry) {
       : "動画上をドラッグして選択";
   }
   draft = null;
-  video.src = convertFileSrc(entry.path);
-  video.load();
+  player.load(convertFileSrc(entry.path));
   $("workspace").classList.remove("empty");
   for (const id of ["saveSelection", "saveNext", "exportVideo", "clear"])
     $(id).removeAttribute("disabled");
   $("undo").toggleAttribute("disabled", !operations.length);
   renderList();
-  video.onloadedmetadata = () => {
-    video.playbackRate = playbackRate;
-    updateTransport();
-    draw();
-  };
 }
 
 let openingProject = false;
@@ -209,7 +230,7 @@ async function openProject(selected: string) {
     const scanned = await invoke<VideoEntry[]>("scan_project", {
       root: selected,
     });
-    video.pause();
+    player.pause();
     root = selected;
     entries = scanned;
     $("batchProgress").hidden = true;
@@ -234,8 +255,7 @@ async function openProject(selected: string) {
     renderList();
     if (entries[0]) await select(entries[0]);
     else {
-      video.removeAttribute("src");
-      video.load();
+      player.load(null);
       $("workspace").classList.add("empty");
       for (const id of [
         "saveSelection",
@@ -514,7 +534,7 @@ $("exportVideo").onclick = async () => {
     return;
   }
   setExporting(true);
-  video.pause();
+  player.pause();
   setButtonIcon("exportVideo", "wand-sparkles", "書き出し中…");
   try {
     await flushSelection();
@@ -549,7 +569,7 @@ $("cancelBatch").onclick = () => {
 $("exportBatch").onclick = async () => {
   if (exporting || openingProject) return;
   setExporting(true);
-  video.pause();
+  player.pause();
   cancelBatch = false;
   $("batchErrors").hidden = true;
   $("batchErrorList").replaceChildren();
@@ -619,8 +639,8 @@ const formatTime = (s: number) =>
 function updateTransport() {
   setButtonIcon(
     "play",
-    video.paused ? "play" : "pause",
-    video.paused ? "再生" : "一時停止",
+    player.paused ? "play" : "pause",
+    player.paused ? "再生" : "一時停止",
   );
   $("time").textContent =
     `${formatTime(video.currentTime)} / ${formatTime(video.duration)}`;
@@ -630,12 +650,14 @@ function updateTransport() {
     video.muted || video.volume === 0 ? "volume-x" : "volume-2",
   );
 }
-$("play").onclick = () => (video.paused ? video.play() : video.pause());
+$("play").onclick = () => {
+  if (player.paused) void player.play();
+  else player.pause();
+};
 const stepFrame = (d: number) => {
-  video.pause();
-  video.currentTime = Math.max(
-    0,
-    Math.min(video.duration || 0, video.currentTime + d / 30),
+  player.pause();
+  player.seek(
+    Math.max(0, Math.min(video.duration || 0, video.currentTime + d / 30)),
   );
   draw();
 };
@@ -643,34 +665,20 @@ $("frameBack").onclick = () => stepFrame(-1);
 $("frameNext").onclick = () => stepFrame(1);
 seek.oninput = () => {
   if (video.duration) {
-    video.currentTime = Number(seek.value) * video.duration;
+    player.seek(Number(seek.value) * video.duration);
     draw();
   }
 };
 volume.oninput = () => {
-  video.volume = Number(volume.value);
-  video.muted = false;
-  updateTransport();
+  player.setVolume(Number(volume.value), false);
 };
 $("mute").onclick = () => {
-  video.muted = !video.muted;
-  updateTransport();
+  player.setVolume(video.volume, !video.muted);
 };
 $("loop").onclick = () => {
-  video.loop = !video.loop;
-  $("loop").classList.toggle("active", video.loop);
+  player.setLoop(!player.looping);
+  $("loop").classList.toggle("active", player.looping);
 };
-video.onplay = () => {
-  updateTransport();
-  animate();
-};
-video.onpause = () => {
-  cancelAnimationFrame(animationFrame);
-  updateTransport();
-  draw();
-};
-video.ontimeupdate = updateTransport;
-video.onvolumechange = updateTransport;
 document.addEventListener("keydown", (e) => {
   if (exporting) return;
   if (/input|button/i.test((e.target as HTMLElement).tagName)) return;
@@ -684,7 +692,8 @@ document.addEventListener("keydown", (e) => {
     markChanged();
   } else if (e.code === "Space") {
     e.preventDefault();
-    video.paused ? video.play() : video.pause();
+    if (player.paused) void player.play();
+    else player.pause();
   } else if (e.key === "ArrowLeft") {
     e.preventDefault();
     stepFrame(e.shiftKey ? -30 : -1);
@@ -833,8 +842,7 @@ document
 document.querySelectorAll<HTMLButtonElement>(".speed").forEach((button) => {
   button.onclick = () => {
     playbackRate = Number(button.dataset.speed);
-    video.defaultPlaybackRate = playbackRate;
-    video.playbackRate = playbackRate;
+    player.setRate(playbackRate);
     document.querySelectorAll<HTMLButtonElement>(".speed").forEach((option) => {
       const selected = option === button;
       option.classList.toggle("active", selected);
@@ -884,9 +892,6 @@ $("seek").setAttribute("aria-label", "再生位置");
 $("volume").setAttribute("aria-label", "音量");
 $("play").setAttribute("aria-label", "再生");
 $("state").setAttribute("role", "status");
-
-video.addEventListener("loadeddata", draw);
-video.addEventListener("seeked", draw);
 
 function closeAppearance() {
   $("appearancePanel").hidden = true;

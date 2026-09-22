@@ -12,7 +12,7 @@ type RenderOptions = {
 /** Reuse offscreen surfaces while drawing a selection or mosaic preview. */
 export function createRenderer(
   canvas: HTMLCanvasElement,
-  video: HTMLVideoElement,
+  source: HTMLVideoElement | (() => HTMLVideoElement),
 ) {
   const ctx = canvas.getContext("2d")!;
   const maskCanvas = document.createElement("canvas"),
@@ -23,6 +23,11 @@ export function createRenderer(
     blockMaskCtx = blockMaskCanvas.getContext("2d")!;
   const cellCanvas = document.createElement("canvas"),
     cellCtx = cellCanvas.getContext("2d", { willReadFrequently: true })!;
+  let cachedOperations: MaskOperation[] | undefined;
+  let cachedLength = -1;
+  let hadDraft = false;
+  let blockDirty = true;
+  let cachedGrid = "";
   function pathOperation(
     target: CanvasRenderingContext2D,
     op: MaskOperation,
@@ -108,6 +113,7 @@ export function createRenderer(
     rangeColor,
     rangeOpacity,
   }: RenderOptions) {
+    const video = typeof source === "function" ? source() : source;
     const w = Math.max(1, Math.round(fitted.width)),
       h = Math.max(1, Math.round(fitted.height));
     if (canvas.width !== w || canvas.height !== h) {
@@ -115,8 +121,25 @@ export function createRenderer(
       canvas.height = h;
     }
     ctx.clearRect(0, 0, w, h);
-    if (!operations.length && !draft) return;
-    buildMask(w, h, operations, draft);
+    if (!operations.length && !draft) {
+      cachedOperations = undefined;
+      blockDirty = true;
+      return;
+    }
+    const maskChanged =
+      maskCanvas.width !== w ||
+      maskCanvas.height !== h ||
+      cachedOperations !== operations ||
+      cachedLength !== operations.length ||
+      !!draft ||
+      hadDraft;
+    if (maskChanged) {
+      buildMask(w, h, operations, draft);
+      cachedOperations = operations;
+      cachedLength = operations.length;
+      hadDraft = !!draft;
+      blockDirty = true;
+    }
     if (
       previewMode === "mosaic" &&
       video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA
@@ -127,11 +150,18 @@ export function createRenderer(
         ),
         cols = Math.max(1, Math.ceil(video.videoWidth / block)),
         rows = Math.max(1, Math.ceil(video.videoHeight / block));
-      pixelCanvas.width = cols;
-      pixelCanvas.height = rows;
+      if (pixelCanvas.width !== cols || pixelCanvas.height !== rows) {
+        pixelCanvas.width = cols;
+        pixelCanvas.height = rows;
+      }
       pixelCtx.imageSmoothingEnabled = true;
       pixelCtx.drawImage(video, 0, 0, cols, rows);
-      blockifyMask(w, h, cols, rows);
+      const grid = `${w}:${h}:${cols}:${rows}`;
+      if (blockDirty || cachedGrid !== grid) {
+        blockifyMask(w, h, cols, rows);
+        blockDirty = false;
+        cachedGrid = grid;
+      }
       ctx.save();
       ctx.drawImage(blockMaskCanvas, 0, 0);
       ctx.globalCompositeOperation = "source-in";

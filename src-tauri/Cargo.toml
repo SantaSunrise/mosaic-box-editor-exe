@@ -1,6 +1,6 @@
 [package]
 name = "mosaic-box-editor"
-version = "0.0.1"
+version = "0.0.2"
 description = "Draw mosaic regions on local videos"
 edition = "2021"
 license = "MIT"
