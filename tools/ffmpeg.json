@@ -1,0 +1,10 @@
+{
+  "version": "9.0.1",
+  "url": "https://github.com/GyanD/codexffmpeg/releases/download/9.0.1/ffmpeg-9.0.1-full_build.zip",
+  "archiveSha256": "2e8e28af97c2ae338ccef92e36da9b2a4cd21d0cad9dde093545606cb07f5b00",
+  "directory": "ffmpeg-9.0.1-full_build",
+  "binaries": {
+    "ffmpeg.exe": "57c56e369d5b4873b4d93fc1a1d833cb7cd8bc9325c14b05c34ce60b22842d8a",
+    "ffprobe.exe": "afe05347caaabe479b3c4eae71992b6ec1e11c57266a1d665deb0f9fe9847208"
+  }
+}

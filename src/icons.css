@@ -1,0 +1,17 @@
+button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+}
+
+button .lucide {
+  width: 16px;
+  height: 16px;
+  stroke-width: 1.9;
+  flex: 0 0 auto;
+}
+
+.icon-button {
+  min-width: 36px;
+}
