@@ -7,6 +7,8 @@ type RenderOptions = {
   previewMode: "region" | "mosaic";
   rangeColor: { rgb: string };
   rangeOpacity: { alpha: number };
+  /** AI check detections on the current frame, drawn as outlines. */
+  highlights?: { box: [number, number, number, number]; covered: boolean }[];
 };
 
 /** Reuse offscreen surfaces while drawing a selection or mosaic preview. */
@@ -112,6 +114,7 @@ export function createRenderer(
     previewMode,
     rangeColor,
     rangeOpacity,
+    highlights = [],
   }: RenderOptions) {
     const video = typeof source === "function" ? source() : source;
     const w = Math.max(1, Math.round(fitted.width)),
@@ -124,6 +127,7 @@ export function createRenderer(
     if (!operations.length && !draft) {
       cachedOperations = undefined;
       blockDirty = true;
+      drawHighlights(w, h, highlights);
       return;
     }
     const maskChanged =
@@ -176,6 +180,29 @@ export function createRenderer(
       ctx.fillRect(0, 0, w, h);
       ctx.restore();
     }
+    drawHighlights(w, h, highlights);
+  }
+  // Dashed red: outside the saved selection (unmosaicked suspect).
+  // Solid white: already inside the selection.
+  function drawHighlights(
+    w: number,
+    h: number,
+    highlights: NonNullable<RenderOptions["highlights"]>,
+  ) {
+    if (!highlights.length) return;
+    ctx.save();
+    ctx.lineWidth = 2;
+    for (const { box, covered } of highlights) {
+      ctx.strokeStyle = covered ? "#ffffff" : "#ff5a6e";
+      ctx.setLineDash(covered ? [] : [8, 5]);
+      ctx.strokeRect(
+        box[0] * w,
+        box[1] * h,
+        (box[2] - box[0]) * w,
+        (box[3] - box[1]) * h,
+      );
+    }
+    ctx.restore();
   }
 
   return draw;

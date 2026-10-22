@@ -6,6 +6,9 @@ import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { open } from "@tauri-apps/plugin-dialog";
 import { refreshIcons, setButtonIcon } from "./ui/icons";
 import { pendingExports, runBatch } from "./batch-export";
+import { checkPanelTemplate } from "./ui/check-panel";
+import { setupCheckPanel } from "./check-ui";
+import { formatTime as formatCheckTime, isCovered } from "./check";
 import "./style.css";
 import "./icons.css";
 import {
@@ -22,6 +25,8 @@ import type {
   SelectionData,
   ExportResult,
   VideoEntry,
+  Detection,
+  FileCheckResult,
 } from "./types";
 import { rangeColors, rangeOpacities } from "./appearance";
 let rangeColor = rangeColors[4],
@@ -38,7 +43,7 @@ try {
 }
 
 const app = document.querySelector<HTMLElement>("#app")!;
-app.innerHTML = editorTemplate;
+app.innerHTML = editorTemplate + checkPanelTemplate;
 
 const $ = <T extends HTMLElement>(id: string) =>
   document.querySelector<T>(`#${id}`)!;
@@ -94,6 +99,10 @@ let view: Viewport = { zoom: 1, x: 0, y: 0 };
 let fitted: Size = { width: 1, height: 1 };
 let pan: { pointerId: number; x: number; y: number; start: Viewport } | null =
   null;
+// AI check: detections shown on the current clip, and per-clip verdicts.
+let highlightDetections: Detection[] = [];
+let checkResults: ReadonlyMap<string, FileCheckResult> = new Map();
+let checking = false;
 
 function legacyOperations(data: SelectionData | null): MaskOperation[] {
   if (data?.mask?.length) return structuredClone(data.mask);
@@ -121,6 +130,10 @@ function draw() {
     previewMode,
     rangeColor,
     rangeOpacity,
+    highlights: highlightDetections.map((d) => ({
+      box: d.box,
+      covered: isCovered(d, operations),
+    })),
   });
 }
 function animate() {
@@ -163,7 +176,11 @@ function renderList() {
     visible
       .map(({ e, i }) => {
         const [label, status, icon] = statusOf(e);
-        return `<button class="video-row ${e === current ? "active" : ""}" data-i="${i}" aria-current="${e === current}" title="${escapeHtml(e.name)} — ${label}"><span class="file-status-icon ${status}" aria-hidden="true"><i data-lucide="${icon}"></i></span><span class="file-details"><span class="file-name">${escapeHtml(e.name)}</span><span class="status-badge ${status}"><i data-lucide="${icon}"></i>${label}</span></span></button>`;
+        const verdict = checkResults.get(e.boxKey)?.verdict;
+        const ai = verdict
+          ? `<span class="ai-badge ${verdict}">AI ${verdict === "ok" ? "OK" : verdict === "ng" ? "NG" : "エラー"}</span>`
+          : "";
+        return `<button class="video-row ${e === current ? "active" : ""}" data-i="${i}" aria-current="${e === current}" title="${escapeHtml(e.name)} — ${label}"><span class="file-status-icon ${status}" aria-hidden="true"><i data-lucide="${icon}"></i></span><span class="file-details"><span class="file-name">${escapeHtml(e.name)}</span><span class="status-badges"><span class="status-badge ${status}"><i data-lucide="${icon}"></i>${label}</span>${ai}</span></span></button>`;
       })
       .join("") || '<p class="list-empty">該当する動画はありません</p>';
   $("countAll").textContent = String(entries.length);
@@ -190,6 +207,7 @@ async function select(entry: VideoEntry) {
   if (current && dirty) await saveCurrent(true);
   if (operations.length) lastMask = structuredClone(operations);
   current = entry;
+  highlightDetections = [];
   resetView();
   operations = legacyOperations(entry.box);
   if (
@@ -219,7 +237,7 @@ async function select(entry: VideoEntry) {
 
 let openingProject = false;
 async function openProject(selected: string) {
-  if (openingProject || exporting) return;
+  if (openingProject || exporting || checking) return;
   openingProject = true;
   updateBatchButton();
   for (const id of ["choose", "dropZone"]) $(id).setAttribute("disabled", "");
@@ -233,6 +251,7 @@ async function openProject(selected: string) {
     player.pause();
     root = selected;
     entries = scanned;
+    checkPanel.reset();
     $("batchProgress").hidden = true;
     $("batchErrors").hidden = true;
     $("project").textContent = root;
@@ -285,7 +304,7 @@ async function openProject(selected: string) {
   }
 }
 async function chooseProject() {
-  if (exporting) return;
+  if (exporting || checking) return;
   try {
     const selected = await open({
       directory: true,
@@ -629,6 +648,57 @@ $("exportBatch").onclick = async () => {
   }
 };
 updateBatchButton();
+
+function whenMetadata(target: HTMLVideoElement) {
+  if (target.readyState >= HTMLMediaElement.HAVE_METADATA)
+    return Promise.resolve();
+  return new Promise<void>((resolve) => {
+    const done = () => {
+      target.removeEventListener("loadedmetadata", done);
+      target.removeEventListener("error", done);
+      resolve();
+    };
+    target.addEventListener("loadedmetadata", done);
+    target.addEventListener("error", done);
+  });
+}
+const checkPanel = setupCheckPanel({
+  root: () => root,
+  busy: () => exporting || openingProject,
+  setChecking(busy) {
+    checking = busy;
+    for (const id of ["choose", "dropZone"])
+      $(id).toggleAttribute("disabled", busy || exporting);
+  },
+  operationsFor(key) {
+    const entry = entries.find((e) => e.boxKey === key);
+    if (entry === current) return operations;
+    return legacyOperations(entry?.box ?? null);
+  },
+  canOpen: (key) => entries.some((e) => e.boxKey === key),
+  async openDetections(key, frame) {
+    const entry = entries.find((e) => e.boxKey === key);
+    if (!entry || exporting) return;
+    await select(entry);
+    highlightDetections = frame.detections;
+    player.pause();
+    if (frame.time !== null) {
+      await whenMetadata(video);
+      player.seek(frame.time);
+    }
+    const suspects = frame.detections.filter(
+      (d) => !isCovered(d, operations),
+    ).length;
+    $("state").textContent =
+      `AI判定：${formatCheckTime(frame.time)} のフレームで${frame.detections.length}件検出` +
+      (suspects ? `（範囲外 ${suspects}件：赤い点線）` : "（すべて範囲内）");
+    draw();
+  },
+  resultsChanged(results) {
+    checkResults = results;
+    renderList();
+  },
+});
 
 const seek = $("seek") as HTMLInputElement,
   volume = $("volume") as HTMLInputElement;

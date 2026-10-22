@@ -27,6 +27,12 @@ import {
   Download,
   Search,
   Palette,
+  ShieldCheck,
+  X,
+  LogIn,
+  LogOut,
+  Crosshair,
+  ScanSearch,
 } from "lucide";
 
 const lucideIcons = {
@@ -57,6 +63,12 @@ const lucideIcons = {
   Download,
   Search,
   Palette,
+  ShieldCheck,
+  X,
+  LogIn,
+  LogOut,
+  Crosshair,
+  ScanSearch,
 };
 const iconMarkup = (name: string, label?: string) =>
   `<i data-lucide="${name}"></i>${label ? `<span>${label}</span>` : ""}`;

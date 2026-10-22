@@ -8,9 +8,17 @@ export const editorTemplate = /* HTML */ ` <header>
         <h1>Mosaic Box Editor</h1>
       </div>
     </div>
-    <button id="choose">
-      <i data-lucide="folder-open"></i><span>動画フォルダを開く</span>
-    </button>
+    <div class="header-actions">
+      <button
+        id="openCheck"
+        class="quiet"
+        title="Cloudflare Accessでログインし、モザイク漏れをAIで判定します"
+      >
+        <i data-lucide="shield-check"></i><span>AI判定</span></button
+      ><button id="choose">
+        <i data-lucide="folder-open"></i><span>動画フォルダを開く</span>
+      </button>
+    </div>
   </header>
   <section class="workspace empty" id="workspace">
     <aside aria-label="動画ライブラリ">
