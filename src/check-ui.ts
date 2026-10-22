@@ -30,7 +30,7 @@ export type CheckHost = {
   resultsChanged(results: ReadonlyMap<string, FileCheckResult>): void;
 };
 
-const API_KEY = "mosaic-check-api";
+const API_URL_STORAGE = "mosaic-check-api";
 const $ = <T extends HTMLElement>(id: string) =>
   document.querySelector<T>(`#${id}`)!;
 const escapeHtml = (value: string) =>
@@ -57,7 +57,7 @@ export function setupCheckPanel(host: CheckHost) {
 
   try {
     apiBase.value =
-      localStorage.getItem(API_KEY) || import.meta.env.VITE_CHECK_API_URL || "";
+      localStorage.getItem(API_URL_STORAGE) || import.meta.env.VITE_CHECK_API_URL || "";
   } catch {
     apiBase.value = import.meta.env.VITE_CHECK_API_URL || "";
   }
@@ -275,7 +275,7 @@ export function setupCheckPanel(host: CheckHost) {
       auth = await invoke<AuthInfo>("auth_login", { apiBase: apiBase.value });
       apiBase.value = auth.apiBase;
       try {
-        localStorage.setItem(API_KEY, auth.apiBase);
+        localStorage.setItem(API_URL_STORAGE, auth.apiBase);
       } catch {
         /* The URL can be typed again next time. */
       }
