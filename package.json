@@ -5,8 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "check": "tsc --noEmit",
-    "test": "node --test tools/*.test.mjs",
+    "check": "tsc --noEmit && tsc --noEmit -p worker",
+    "test": "node --test tools/*.test.mjs worker/test/*.test.mjs",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "build": "pnpm check && vite build",

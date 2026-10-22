@@ -1,0 +1,26 @@
+# Mosaic check API. All IDs below are placeholders; see docs/ai-check/deploy.md.
+# This Worker has no [triggers] / crons on purpose.
+name = "mosaic-check"
+main = "src/index.ts"
+compatibility_date = "2026-10-01"
+# Replace with your account ID, or set CLOUDFLARE_ACCOUNT_ID instead.
+account_id = "00000000000000000000000000000000"
+
+# Reach the Worker only through the Access-protected custom domain.
+workers_dev = false
+preview_urls = false
+routes = [{ pattern = "mosaic-check.example.com", custom_domain = true }]
+
+[ai]
+binding = "AI"
+
+[vars]
+ACCESS_TEAM_DOMAIN = "your-team.cloudflareaccess.com"
+# Application Audience (AUD) tag of the Access application (not a secret).
+ACCESS_AUD = "0000000000000000000000000000000000000000000000000000000000000000"
+JEV_MODEL = "typesafe/jev-1.14.0"
+JEV_THRESHOLD = "0.5"
+JEV_IMAGE_HEADER = "true"
+
+[observability]
+enabled = true

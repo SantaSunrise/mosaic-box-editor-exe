@@ -22,3 +22,6 @@ mosaic/
 .env
 .env.*
 *.log
+!.env.example
+.dev.vars
+.wrangler/
