@@ -16,9 +16,12 @@
 `pnpm format` と `cargo fmt --manifest-path src-tauri/Cargo.toml` で整形します。
 PR前にREADMEのチェックコマンドを実行してください。Windows CIでも型・整形・テストを検証します。
 
-Nodeのテストはズームの座標保持、一括処理の対象判定・順次実行・キャンセルを検証します。
+Nodeのテストはズームの座標保持、一括処理の対象判定・順次実行・キャンセル、
+AI判定の範囲との重なり・集計・検出枠の描画、Worker（`worker/test`）のJWT検証とJev入出力を検証します。
 Rustのテストは保存先、更新状態、回転情報、実際のFFmpeg書き出しを検証します。
 `--include-ignored` を指定する実動画テストは、先に `pnpm setup:ffmpeg` が必要です。
+Workerは `worker/` で独立して型チェック・テストできます（`pnpm check` / `pnpm test` にも含まれます）。
+CloudflareへのデプロイはPRでは行わず、[デプロイ手順書](docs/ai-check/deploy.md) に従って承認後に実施します。
 
 UI変更時は通常サイズ（1180×760）と最小サイズ（760×520）の両方で、
 メイン画面にページスクロールが発生しないこと、フォーカスと選択状態が分かることを確認してください。
