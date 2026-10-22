@@ -274,13 +274,19 @@ mod ai_check {
         assert!(token_info("https://x.example.com", "garbage").is_err());
     }
 
-    /// Minimal stand-in for the Worker: records the request and answers with
-    /// one detection on frame 4.
-    fn fake_worker() -> (String, std::thread::JoinHandle<(String, serde_json::Value)>) {
+    /// Minimal stand-in for the Worker: serves `requests` calls, records them
+    /// and answers with one detection on frame 4.
+    fn fake_worker(
+        requests: usize,
+    ) -> (
+        String,
+        std::thread::JoinHandle<Vec<(String, serde_json::Value)>>,
+    ) {
         use std::io::{BufRead, BufReader, Read, Write};
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         let base = format!("http://127.0.0.1:{}", listener.local_addr().unwrap().port());
         let handle = std::thread::spawn(move || {
+            (0..requests).map(|_| {
             let (stream, _) = listener.accept().unwrap();
             let mut reader = BufReader::new(stream);
             let mut head = Vec::new();
@@ -312,7 +318,7 @@ mod ai_check {
                     serde_json::json!({"id": f["id"], "detections": detections})
                 })
                 .collect();
-            let response = serde_json::json!({"model": "typesafe/jev-1.14.0", "frames": frames, "usage": {"inputTokens": 7560}}).to_string();
+            let response = serde_json::json!({"model": "typesafe/jev-1.14.0", "frames": frames, "usage": {"inputTokens": 756}}).to_string();
             write!(
                 reader.get_mut(),
                 "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{response}",
@@ -320,6 +326,7 @@ mod ai_check {
             )
             .unwrap();
             (head.concat(), request)
+            }).collect()
         });
         (base, handle)
     }
@@ -346,16 +353,19 @@ mod ai_check {
             .output()
             .unwrap();
         assert!(result.status.success());
-        let (base, worker) = fake_worker();
+        let (base, worker) = fake_worker(10);
         let checked =
             crate::check::check_target(temp.path(), "original", "clip.mp4", &base, "h.p.s")
                 .unwrap();
-        let (head, request) = worker.join().unwrap();
-        assert!(head.to_ascii_lowercase().contains("cf-access-token: h.p.s"));
-        let frames = request["frames"].as_array().unwrap();
-        assert_eq!(frames.len(), 10);
-        assert_eq!(frames[0]["mime"], "image/jpeg");
-        assert!(frames[0]["data"].as_str().unwrap().starts_with("/9j/"));
+        let requests = worker.join().unwrap();
+        assert_eq!(requests.len(), 10);
+        for (head, request) in &requests {
+            assert!(head.to_ascii_lowercase().contains("cf-access-token: h.p.s"));
+            let frames = request["frames"].as_array().unwrap();
+            assert_eq!(frames.len(), 1);
+            assert_eq!(frames[0]["mime"], "image/jpeg");
+            assert!(frames[0]["data"].as_str().unwrap().starts_with("/9j/"));
+        }
         assert_eq!(checked.verdict, "ng");
         assert_eq!(checked.frames.len(), 10);
         assert_eq!(checked.frames[4].detections.len(), 1);

@@ -321,56 +321,58 @@ pub fn check_target(
             .collect()
     };
 
+    // One frame per request keeps each body small enough for the Workers Free
+    // CPU limit and lets a single failed frame be reported without losing the rest.
     let mut frames: Vec<FrameResult> = Vec::with_capacity(times.len());
-    let mut request = DetectRequest { frames: Vec::new() };
-    for (index, time) in times.iter().enumerate() {
-        match extract_jpeg(&source, *time) {
-            Ok(bytes) => request.frames.push(DetectFrame {
-                id: index.to_string(),
-                mime: "image/jpeg",
-                data: STANDARD.encode(bytes),
-            }),
-            Err(error) => frames.push(FrameResult {
-                index,
-                time: *time,
-                detections: Vec::new(),
-                error: Some(error),
-            }),
-        }
-    }
     let mut model = String::new();
     let mut input_tokens = 0;
-    if !request.frames.is_empty() {
-        let response = post_detect(api_base, token, &request)?;
-        model = response.model;
-        input_tokens = response.usage.input_tokens;
-        for frame in response.frames {
-            let Some(index) = frame.id.parse::<usize>().ok().filter(|i| *i < times.len()) else {
+    for (index, time) in times.iter().copied().enumerate() {
+        let mut result = FrameResult {
+            index,
+            time,
+            detections: Vec::new(),
+            error: None,
+        };
+        let request = match extract_jpeg(&source, time) {
+            Ok(bytes) => DetectRequest {
+                frames: vec![DetectFrame {
+                    id: index.to_string(),
+                    mime: "image/jpeg",
+                    data: STANDARD.encode(bytes),
+                }],
+            },
+            Err(error) => {
+                result.error = Some(error);
+                frames.push(result);
                 continue;
-            };
-            frames.push(FrameResult {
-                index,
-                time: times[index],
-                detections: frame
-                    .detections
-                    .into_iter()
-                    .filter(|d| d.box_.iter().all(|v| v.is_finite()))
-                    .collect(),
-                error: frame.error,
-            });
-        }
-        // A frame the Worker silently dropped must not count as clean.
-        for request_frame in &request.frames {
-            let index: usize = request_frame.id.parse().unwrap_or(usize::MAX);
-            if index < times.len() && !frames.iter().any(|f| f.index == index) {
-                frames.push(FrameResult {
-                    index,
-                    time: times[index],
-                    detections: Vec::new(),
-                    error: Some("判定結果がありません".into()),
-                });
             }
+        };
+        match post_detect(api_base, token, &request) {
+            Ok(response) => {
+                model = response.model;
+                input_tokens += response.usage.input_tokens;
+                match response
+                    .frames
+                    .into_iter()
+                    .find(|f| f.id == request.frames[0].id)
+                {
+                    Some(frame) => {
+                        result.detections = frame
+                            .detections
+                            .into_iter()
+                            .filter(|d| d.box_.iter().all(|v| v.is_finite()))
+                            .collect();
+                        result.error = frame.error;
+                    }
+                    // A frame the Worker silently dropped must not count as clean.
+                    None => result.error = Some("判定結果がありません".into()),
+                }
+            }
+            // Login problems stop the file; the UI asks the user to log in again.
+            Err(error) if error.starts_with(AUTH_REQUIRED) => return Err(error),
+            Err(error) => result.error = Some(error),
         }
+        frames.push(result);
     }
     frames.sort_by_key(|f| f.index);
     Ok(FileCheckResult {
