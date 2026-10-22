@@ -14,14 +14,16 @@ fn safe_id(id: &str) -> bool {
         })
 }
 
-pub fn scan_project(root: &Path) -> Result<Vec<VideoEntry>, String> {
-    if !root.is_dir() {
-        return Err(format!("{} is not a directory", root.display()));
-    }
-    fs::create_dir_all(root.join("boxes")).map_err(|e| e.to_string())?;
-    fs::create_dir_all(root.join("mosaic")).map_err(|e| e.to_string())?;
+pub(crate) const VIDEO_EXTENSIONS: &[&str] = &["mp4", "webm", "mov"];
 
-    fn collect(dir: &Path, root: &Path, output: &mut Vec<PathBuf>) -> Result<(), String> {
+/// Media below `root`, skipping generated folders. Sorted case-insensitively.
+pub(crate) fn collect_media(root: &Path, extensions: &[&str]) -> Result<Vec<PathBuf>, String> {
+    fn collect(
+        dir: &Path,
+        root: &Path,
+        extensions: &[&str],
+        output: &mut Vec<PathBuf>,
+    ) -> Result<(), String> {
         for item in fs::read_dir(dir).map_err(|e| format!("{}: {e}", dir.display()))? {
             let path = item.map_err(|e| e.to_string())?.path();
             if path.is_dir() {
@@ -36,25 +38,34 @@ pub fn scan_project(root: &Path) -> Result<Vec<VideoEntry>, String> {
                 ) {
                     continue;
                 }
-                collect(&path, root, output)?;
+                collect(&path, root, extensions, output)?;
             } else {
                 let ext = path
                     .extension()
                     .and_then(|x| x.to_str())
                     .unwrap_or("")
                     .to_ascii_lowercase();
-                if ["mp4", "webm", "mov"].contains(&ext.as_str()) {
+                if extensions.contains(&ext.as_str()) {
                     output.push(path);
                 }
             }
         }
         Ok(())
     }
-
     let mut paths = Vec::new();
-    collect(root, root, &mut paths)?;
+    collect(root, root, extensions, &mut paths)?;
     paths.sort_by_key(|p| p.to_string_lossy().to_lowercase());
-    paths
+    Ok(paths)
+}
+
+pub fn scan_project(root: &Path) -> Result<Vec<VideoEntry>, String> {
+    if !root.is_dir() {
+        return Err(format!("{} is not a directory", root.display()));
+    }
+    fs::create_dir_all(root.join("boxes")).map_err(|e| e.to_string())?;
+    fs::create_dir_all(root.join("mosaic")).map_err(|e| e.to_string())?;
+
+    collect_media(root, VIDEO_EXTENSIONS)?
         .into_iter()
         .map(|path| {
             let relative = path.strip_prefix(root).map_err(|e| e.to_string())?;
