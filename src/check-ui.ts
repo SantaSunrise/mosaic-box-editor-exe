@@ -57,7 +57,9 @@ export function setupCheckPanel(host: CheckHost) {
 
   try {
     apiBase.value =
-      localStorage.getItem(API_URL_STORAGE) || import.meta.env.VITE_CHECK_API_URL || "";
+      localStorage.getItem(API_URL_STORAGE) ||
+      import.meta.env.VITE_CHECK_API_URL ||
+      "";
   } catch {
     apiBase.value = import.meta.env.VITE_CHECK_API_URL || "";
   }
