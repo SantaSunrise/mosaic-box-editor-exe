@@ -45,7 +45,9 @@ export const editorTemplate = /* HTML */ ` <header>
           <button class="filter" data-filter="ai-ng">
             AI NG <b id="countAiNg">0</b></button
           ><button class="filter" data-filter="ai-review">
-            AI要確認 <b id="countAiReview">0</b>
+            AI要確認 <b id="countAiReview">0</b></button
+          ><button class="filter" data-filter="ai-ok">
+            AI OK <b id="countAiOk">0</b>
           </button>
         </div>
       </div>

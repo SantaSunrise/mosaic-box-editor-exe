@@ -7,6 +7,26 @@ export function folderName(path: string) {
   return parts.at(-1) ?? path;
 }
 
+/**
+ * A path in three parts for the header: the root ("C:\\" or "/"), the folders
+ * in between (shrunk first when space is short) and the last folder name.
+ * `separator` is what joins middle and tail again.
+ */
+export function splitPath(path: string) {
+  const separator = path.includes("\\") ? "\\" : "/";
+  const parts = path.split(/[\\/]+/).filter(Boolean);
+  const drive = /^[A-Za-z]:$/.test(parts[0] ?? "");
+  const head = drive
+    ? parts.shift() + separator
+    : path.startsWith("\\\\")
+      ? "\\\\"
+      : path.startsWith("/") || path.startsWith("\\")
+        ? separator
+        : "";
+  const tail = parts.pop() ?? "";
+  return { head, middle: parts.join(separator), tail, separator };
+}
+
 export type ThumbnailLoader = {
   /** Resolves to a data URL, or null when it could not be made (cached too). */
   request(key: string): Promise<string | null>;

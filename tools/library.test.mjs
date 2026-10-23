@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createThumbnailLoader, folderName } from "../src/library.ts";
+import {
+  createThumbnailLoader,
+  folderName,
+  splitPath,
+} from "../src/library.ts";
 
 const tick = (ms = 0) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -93,4 +97,38 @@ test("clearing forgets thumbnails so a changed folder is loaded again", async ()
   loader.clear();
   assert.equal(loader.cached("a"), undefined);
   assert.equal(await loader.request("a"), "data:2");
+});
+
+test("the header path keeps the drive and the last folder and shrinks the middle", () => {
+  assert.deepEqual(splitPath("C:\\Users\\owner\\videos\\shoot3"), {
+    head: "C:\\",
+    middle: "Users\\owner\\videos",
+    tail: "shoot3",
+    separator: "\\",
+  });
+  assert.deepEqual(splitPath("C:\\shoot3"), {
+    head: "C:\\",
+    middle: "",
+    tail: "shoot3",
+    separator: "\\",
+  });
+  assert.deepEqual(splitPath("D:\\"), {
+    head: "D:\\",
+    middle: "",
+    tail: "",
+    separator: "\\",
+  });
+  assert.deepEqual(splitPath("/home/a/b/"), {
+    head: "/",
+    middle: "home/a",
+    tail: "b",
+    separator: "/",
+  });
+  assert.equal(splitPath("\\\\server\\share\\a").head, "\\\\");
+  assert.deepEqual(splitPath("single"), {
+    head: "",
+    middle: "",
+    tail: "single",
+    separator: "/",
+  });
 });

@@ -273,6 +273,7 @@ test("a review file gets a candidate around every located box from 0.5 up", () =
 test("AI library filters select by verdict and count per verdict", () => {
   assert.equal(aiFilterVerdict("ai-ng"), "ng");
   assert.equal(aiFilterVerdict("ai-review"), "review");
+  assert.equal(aiFilterVerdict("ai-ok"), "ok");
   for (const other of ["all", "missing", "ready", "exported", "stale", ""])
     assert.equal(aiFilterVerdict(other), null);
   const results = new Map([

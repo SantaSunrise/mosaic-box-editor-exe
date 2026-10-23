@@ -8,7 +8,7 @@ import { refreshIcons, setButtonIcon } from "./ui/icons";
 import { pendingExports, runBatch } from "./batch-export";
 import { checkPanelTemplate } from "./ui/check-panel";
 import { setupCheckPanel } from "./check-ui";
-import { createThumbnailLoader, folderName } from "./library";
+import { createThumbnailLoader, splitPath } from "./library";
 import {
   aiFilterVerdict,
   candidateFor,
@@ -207,6 +207,17 @@ const thumbnails = createThumbnailLoader(
   (path) => invoke<string>("video_thumbnail", { root, path }),
   3,
 );
+// Drive and folder name stay readable; only the middle shrinks ("C:\Users\ow…\shoot3").
+function pathMarkup(path: string) {
+  const { head, middle, tail, separator } = splitPath(path);
+  return (
+    `<span class="p-head">${escapeHtml(head)}</span>` +
+    (middle
+      ? `<span class="p-mid">${escapeHtml(middle)}</span><span class="p-sep">${escapeHtml(separator)}</span>`
+      : "") +
+    `<span class="p-tail">${escapeHtml(tail)}</span>`
+  );
+}
 let thumbObserver: IntersectionObserver | null = null;
 function thumbMarkup(e: VideoEntry) {
   const url = thumbnails.cached(e.path);
@@ -281,6 +292,7 @@ function renderList() {
   );
   $("countAiNg").textContent = String(verdicts.ng);
   $("countAiReview").textContent = String(verdicts.review);
+  $("countAiOk").textContent = String(verdicts.ok);
   document
     .querySelectorAll<HTMLButtonElement>(".video-row")
     .forEach(
@@ -344,7 +356,7 @@ async function openProject(selected: string) {
     $("batchProgress").hidden = true;
     $("batchErrors").hidden = true;
     thumbnails.clear();
-    $("project").textContent = folderName(root);
+    $("project").innerHTML = pathMarkup(root);
     $("project").title = root;
     current = null;
     operations = [];

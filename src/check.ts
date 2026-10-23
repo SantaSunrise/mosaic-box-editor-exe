@@ -216,7 +216,11 @@ export const candidateLabel = (candidate: Pick<Candidate, "basis">) =>
   candidate.basis === "review" ? "モザイク候補（要確認）" : "モザイク候補";
 
 /** Library filter values that select by the AI verdict instead of the status. */
-export const AI_FILTERS = { "ai-ng": "ng", "ai-review": "review" } as const;
+export const AI_FILTERS = {
+  "ai-ng": "ng",
+  "ai-review": "review",
+  "ai-ok": "ok",
+} as const;
 
 /** The verdict an AI filter selects, or null for the status filters. */
 export const aiFilterVerdict = (filter: string): Verdict | null =>
