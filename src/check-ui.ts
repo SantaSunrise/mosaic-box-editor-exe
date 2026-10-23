@@ -3,10 +3,10 @@ import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { runBatch } from "./batch-export";
 import {
   candidateFor,
+  candidateLabel,
   formatTime,
   isAuthError,
   isCovered,
-  NG_SCORE,
   sortResults,
   summarize,
   verdictLabel,
@@ -170,15 +170,15 @@ export function setupCheckPanel(host: CheckHost) {
               ? "判定できないフレームがあります"
               : `${result.frames.length}フレーム検出なし`;
         const candidate = candidateFor(result);
-        const candidateFrame = result.frames.find((f) =>
-          f.detections.some((d) => d.score >= NG_SCORE && d.located),
-        );
+        const candidateFrame =
+          candidate &&
+          result.frames.find((f) => f.index === candidate.frameIndex);
         const candidateLine = candidate
-          ? `<li class="candidate-line"><span class="candidate-tag">モザイク候補</span><span>${
+          ? `<li class="candidate-line"><span class="candidate-tag">${candidateLabel(candidate)}</span><span>${
               candidate.pixels
                 ? `${candidate.pixels.width}×${candidate.pixels.height}px（左上 ${candidate.pixels.x}, ${candidate.pixels.y}）`
                 : `${Math.round((candidate.box[2] - candidate.box[0]) * 100)}%×${Math.round((candidate.box[3] - candidate.box[1]) * 100)}%`
-            }・NG ${candidate.detections}件の枠を包む1つの矩形</span>${
+            }・${candidate.basis === "ng" ? "NG" : "要確認以上"} ${candidate.detections}件の枠を包む1つの矩形</span>${
               openable && candidateFrame
                 ? `<button class="quiet jump" data-result="${index}" data-frame="${candidateFrame.index}"><i data-lucide="crosshair"></i><span>編集画面で候補を見る</span></button>`
                 : ""

@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  aiFilterVerdict,
   candidateFor,
+  candidateLabel,
+  countVerdicts,
   coverage,
   formatTime,
   isAuthError,
@@ -203,9 +206,92 @@ test("the candidate covers the NG frames only, in normalized and source pixels",
     }),
   );
   assert.equal(unsized.pixels, null);
-  // A review-only file has no candidate.
+  assert.equal(candidate.basis, "ng");
+  assert.equal(candidate.frameIndex, 0);
+  // OK and error files have no candidate even if a stray box is present.
+  for (const verdict of ["ok", "error"])
+    assert.equal(
+      candidateFor(
+        withFrames([[detection([0.1, 0.1, 0.2, 0.2], 0.9)]], { verdict }),
+      ),
+      null,
+    );
+});
+
+test("a review file gets a candidate around every located box from 0.5 up", () => {
+  const review = {
+    ...result("a", "review"),
+    width: 1000,
+    height: 500,
+    frames: [
+      { index: 0, time: 0, detections: [] },
+      {
+        index: 1,
+        time: 1,
+        detections: [
+          detection([0.2, 0.2, 0.3, 0.3], 0.55),
+          // Not located: ignored, like for NG files.
+          detection([0, 0, 1, 1], 0.7, false),
+        ],
+      },
+      {
+        index: 2,
+        time: 2,
+        detections: [detection([0.5, 0.4, 0.6, 0.6], 0.75)],
+      },
+    ],
+  };
+  const candidate = candidateFor(review);
+  assert.equal(candidate.basis, "review");
+  assert.equal(candidate.frameIndex, 1);
+  assert.equal(candidate.detections, 2);
+  assert.deepEqual(candidate.box, [0.2, 0.2, 0.6, 0.6]);
+  assert.deepEqual(candidate.pixels, {
+    x: 200,
+    y: 100,
+    width: 400,
+    height: 200,
+  });
+  assert.equal(candidateLabel(candidate), "モザイク候補（要確認）");
+  assert.equal(candidateLabel({ basis: "ng" }), "モザイク候補");
+  // Only unlocated boxes: nothing to show.
   assert.equal(
-    candidateFor(withFrames([[detection([0.1, 0.1, 0.2, 0.2], 0.6)]])),
+    candidateFor({
+      ...review,
+      frames: [
+        {
+          index: 0,
+          time: 0,
+          detections: [detection([0, 0, 1, 1], 0.6, false)],
+        },
+      ],
+    }),
     null,
   );
+});
+
+test("AI library filters select by verdict and count per verdict", () => {
+  assert.equal(aiFilterVerdict("ai-ng"), "ng");
+  assert.equal(aiFilterVerdict("ai-review"), "review");
+  for (const other of ["all", "missing", "ready", "exported", "stale", ""])
+    assert.equal(aiFilterVerdict(other), null);
+  const results = new Map([
+    ["a", result("a", "ng")],
+    ["b", result("b", "review")],
+    ["c", result("c", "review")],
+    ["d", result("d", "ok")],
+  ]);
+  assert.deepEqual(countVerdicts(["a", "b", "c", "d", "unchecked"], results), {
+    ok: 1,
+    review: 2,
+    ng: 1,
+    error: 0,
+  });
+  // No results yet: every counter is zero.
+  assert.deepEqual(countVerdicts(["a", "b"], new Map()), {
+    ok: 0,
+    review: 0,
+    ng: 0,
+    error: 0,
+  });
 });

@@ -11,6 +11,8 @@ import type {
 
 /** Same rule as ng_check.py: from this probability a detection is NG; weaker ones need a look. */
 export const NG_SCORE = 0.8;
+/** The Worker's own threshold: weaker detections are not returned at all. */
+export const REVIEW_SCORE = 0.5;
 
 /** A detection this much covered by the saved selection counts as handled. */
 export const COVERED_RATIO = 0.9;
@@ -177,26 +179,60 @@ export function toPixels(
 }
 
 /**
- * "モザイク候補" of one video: the rectangle around the boxes of all frames
- * judged NG (score >= NG_SCORE), because the position drifts as the body moves.
- * Boxes are normalized, so resizing frames before sending (long edge 1024px)
- * does not change them; `pixels` converts to the original resolution.
+ * "モザイク候補" of one video: the rectangle around the boxes of the frames
+ * that decided the verdict, because the position drifts as the body moves.
+ * NG video: every located box with score >= NG_SCORE. 要確認 video: every
+ * located box from REVIEW_SCORE up (NG-grade ones included). OK and error
+ * videos have no candidate. Boxes are normalized, so resizing frames before
+ * sending (long edge 1024px) does not change them; `pixels` converts to the
+ * original resolution.
  */
 export function candidateFor(result: FileCheckResult): Candidate | null {
-  const ng = result.frames
-    .flatMap((f) => f.detections)
-    .filter((d) => d.score >= NG_SCORE && d.located);
-  const box = unionBox(ng);
+  if (result.verdict !== "ng" && result.verdict !== "review") return null;
+  const minScore = result.verdict === "ng" ? NG_SCORE : REVIEW_SCORE;
+  const used = result.frames.flatMap((f) =>
+    f.detections
+      .filter((d) => d.score >= minScore && d.located)
+      .map((d) => ({ detection: d, frameIndex: f.index })),
+  );
+  const detections = used.map((u) => u.detection);
+  const box = unionBox(detections);
   if (!box) return null;
   const { width, height } = result;
   return {
+    basis: result.verdict,
+    frameIndex: used[0].frameIndex,
     box,
     pixels:
       width && height && width > 0 && height > 0
         ? toPixels(box, width, height)
         : null,
-    detections: ng.length,
+    detections: detections.length,
   };
+}
+
+/** "モザイク候補", marked when it comes from 要確認 frames only. */
+export const candidateLabel = (candidate: Pick<Candidate, "basis">) =>
+  candidate.basis === "review" ? "モザイク候補（要確認）" : "モザイク候補";
+
+/** Library filter values that select by the AI verdict instead of the status. */
+export const AI_FILTERS = { "ai-ng": "ng", "ai-review": "review" } as const;
+
+/** The verdict an AI filter selects, or null for the status filters. */
+export const aiFilterVerdict = (filter: string): Verdict | null =>
+  (AI_FILTERS as Record<string, Verdict>)[filter] ?? null;
+
+/** Number of clips per verdict, for the AI filter counters. */
+export function countVerdicts(
+  keys: string[],
+  results: ReadonlyMap<string, Pick<FileCheckResult, "verdict">>,
+): Record<Verdict, number> {
+  const counts: Record<Verdict, number> = { ok: 0, review: 0, ng: 0, error: 0 };
+  for (const key of keys) {
+    const verdict = results.get(key)?.verdict;
+    if (verdict) counts[verdict]++;
+  }
+  return counts;
 }
 
 export const isAuthError = (error: unknown) =>

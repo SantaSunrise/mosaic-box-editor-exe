@@ -9,7 +9,10 @@ import { pendingExports, runBatch } from "./batch-export";
 import { checkPanelTemplate } from "./ui/check-panel";
 import { setupCheckPanel } from "./check-ui";
 import {
+  aiFilterVerdict,
   candidateFor,
+  candidateLabel,
+  countVerdicts,
   formatTime as formatCheckTime,
   isCovered,
   verdictLabel,
@@ -115,7 +118,15 @@ function currentCandidate() {
   return result ? candidateFor(result) : null;
 }
 function updateCandidateUI() {
-  $("candidateSection").hidden = !currentCandidate();
+  const candidate = currentCandidate();
+  $("candidateSection").hidden = !candidate;
+  $("candidateLabel").textContent = candidate
+    ? candidateLabel(candidate)
+    : "モザイク候補";
+  $("applyCandidate").title =
+    candidate?.basis === "review"
+      ? "AIが要確認と判定した全フレームの検出枠を包む矩形を、選択範囲に追加します"
+      : "AIがNGと判定した全フレームの検出枠を包む矩形を、選択範囲に追加します";
 }
 
 function legacyOperations(data: SelectionData | null): MaskOperation[] {
@@ -183,10 +194,16 @@ function escapeHtml(value: string) {
       ]!,
   );
 }
+// The AI filters replace the status filter while selected (one filter at a time).
+function matchesFilter(e: VideoEntry) {
+  const aiVerdict = aiFilterVerdict(filter);
+  if (aiVerdict) return checkResults.get(e.boxKey)?.verdict === aiVerdict;
+  return filter === "all" || statusOf(e)[1] === filter;
+}
 function renderList() {
   const visible = entries
     .map((e, i) => ({ e, i }))
-    .filter(({ e }) => filter === "all" || statusOf(e)[1] === filter);
+    .filter(({ e }) => matchesFilter(e));
   $("videos").innerHTML =
     visible
       .map(({ e, i }) => {
@@ -197,7 +214,12 @@ function renderList() {
           : "";
         return `<button class="video-row ${e === current ? "active" : ""}" data-i="${i}" aria-current="${e === current}" title="${escapeHtml(e.name)} — ${label}"><span class="file-status-icon ${status}" aria-hidden="true"><i data-lucide="${icon}"></i></span><span class="file-details"><span class="file-name">${escapeHtml(e.name)}</span><span class="status-badges"><span class="status-badge ${status}"><i data-lucide="${icon}"></i>${label}</span>${ai}</span></span></button>`;
       })
-      .join("") || '<p class="list-empty">該当する動画はありません</p>';
+      .join("") ||
+    `<p class="list-empty">${
+      aiFilterVerdict(filter) && !checkResults.size
+        ? "AI判定の結果がありません。<br />「局部モザイク確認」を実行してください"
+        : "該当する動画はありません"
+    }</p>`;
   $("countAll").textContent = String(entries.length);
   for (const [id, status] of [
     ["countMissing", "missing"],
@@ -209,6 +231,12 @@ function renderList() {
       entries.filter((e) => statusOf(e)[1] === status).length,
     );
   }
+  const verdicts = countVerdicts(
+    entries.map((e) => e.boxKey),
+    checkResults,
+  );
+  $("countAiNg").textContent = String(verdicts.ng);
+  $("countAiReview").textContent = String(verdicts.review);
   document
     .querySelectorAll<HTMLButtonElement>(".video-row")
     .forEach(
@@ -480,8 +508,8 @@ $("applyCandidate").onclick = () => {
   });
   markChanged();
   $("state").textContent = candidate.pixels
-    ? `モザイク候補を範囲に追加しました（${candidate.pixels.width}×${candidate.pixels.height}px）。変更を自動保存します…`
-    : "モザイク候補を範囲に追加しました。変更を自動保存します…";
+    ? `${candidateLabel(candidate)}を範囲に追加しました（${candidate.pixels.width}×${candidate.pixels.height}px）。変更を自動保存します…`
+    : `${candidateLabel(candidate)}を範囲に追加しました。変更を自動保存します…`;
 };
 $("undo").onclick = () => {
   operations.pop();

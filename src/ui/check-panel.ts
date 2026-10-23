@@ -39,7 +39,7 @@ export const checkPanelTemplate = /* HTML */ `<dialog
   <p class="check-rule">
     動画は均等な10フレーム、画像は1枚を判定します。確率80%以上の検出が1フレームでもあればNG、50〜80%は要確認です。
     赤い点線は保存済みの範囲の外にある検出（未モザイク疑い）です。
-    「モザイク候補」は、NGのフレームの検出枠をすべて包む1つの矩形で、編集画面に水色の破線で表示します。範囲は自動では変わりません。
+    「モザイク候補」は、NGの動画ではNGのフレーム、要確認の動画では要確認以上のフレームの検出枠をすべて包む1つの矩形で、編集画面に水色の破線で表示します。範囲は自動では変わりません。
   </p>
   <div id="checkSummary" class="check-summary" hidden></div>
   <div id="checkResults" class="check-results">

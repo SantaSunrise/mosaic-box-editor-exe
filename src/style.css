@@ -143,6 +143,10 @@ aside {
   padding: 0 10px 12px;
   border-bottom: 1px solid #38313f;
 }
+.filters:has(+ .ai-filters) {
+  padding-bottom: 6px;
+  border-bottom: 0;
+}
 .filter {
   justify-content: space-between;
   min-height: 34px;

@@ -49,8 +49,15 @@ export type Detection = {
   boxConfidence?: number;
 };
 export type Verdict = "ok" | "review" | "ng" | "error";
-/** Smallest rectangle around every located NG box of one video. */
+/**
+ * Smallest rectangle around the located boxes of one video: every NG box when
+ * the video is NG, every "needs a look" (or worse) box when it is 要確認.
+ */
 export type Candidate = {
+  /** Which verdict the rectangle comes from. */
+  basis: "ng" | "review";
+  /** First frame that contributed a box (for jumping to it in the editor). */
+  frameIndex: number;
   /** Normalized [x0, y0, x1, y1], the same 0–1 space as saved selections. */
   box: [number, number, number, number];
   /** Same rectangle in pixels of the original video (rotation applied). */

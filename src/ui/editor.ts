@@ -39,6 +39,17 @@ export const editorTemplate = /* HTML */ ` <header>
           更新あり <b id="countStale">0</b>
         </button>
       </div>
+      <div
+        class="filters ai-filters"
+        role="group"
+        aria-label="AI判定での絞り込み"
+      >
+        <button class="filter" data-filter="ai-ng">
+          AI NG <b id="countAiNg">0</b></button
+        ><button class="filter" data-filter="ai-review">
+          AI要確認 <b id="countAiReview">0</b>
+        </button>
+      </div>
       <div id="videos" class="videos">
         <p class="list-empty">
           動画フォルダを開くと<br />中の動画がここに並びます
@@ -102,10 +113,10 @@ export const editorTemplate = /* HTML */ ` <header>
           </div>
         </div>
         <div class="tool-section candidate" id="candidateSection" hidden>
-          <span class="group-label">モザイク候補</span>
+          <span class="group-label" id="candidateLabel">モザイク候補</span>
           <button
             id="applyCandidate"
-            title="AIがNGと判定した全フレームの検出枠を包む矩形を、選択範囲に追加します"
+            title="AIがNG（要確認のみの動画は要確認）と判定した全フレームの検出枠を包む矩形を、選択範囲に追加します"
           >
             <i data-lucide="square-dashed"></i><span>候補を範囲に追加</span>
           </button>
