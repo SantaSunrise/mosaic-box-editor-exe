@@ -1,4 +1,4 @@
-// 局部モザイク確認 dialog: Access login, sequential checks and the result list.
+// 局部モザイク確認 dialog: Access login, parallel checks and the result list.
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { runBatch } from "./batch-export";
 import {
@@ -35,6 +35,8 @@ export type CheckHost = {
 
 /** Access-protected Worker; override at build time with VITE_CHECK_API_URL. */
 export const DEFAULT_API_URL = "https://mosaic-check.santasunrise.app";
+/** Files checked at once. Each sends its 10 frames in parallel. */
+const CHECK_FILE_CONCURRENCY = 4;
 const API_URL = import.meta.env.VITE_CHECK_API_URL || DEFAULT_API_URL;
 const $ = <T extends HTMLElement>(id: string) =>
   document.querySelector<T>(`#${id}`)!;
@@ -243,13 +245,16 @@ export function setupCheckPanel(host: CheckHost) {
       }
       meter.max = targets.length;
       let authFailed = "";
+      // Several files at once keep the Rust side's 20 request slots busy; the
+      // 20-in-flight cap itself is enforced there, across all files.
       const report = await runBatch(targets, {
+        concurrency: CHECK_FILE_CONCURRENCY,
         cancelled: () => cancelled || !!authFailed,
         progress: (done, total, item) => {
           meter.value = done;
           if (item)
             $("checkStatus").textContent =
-              `判定 ${done + 1}/${total}：${item.name}`;
+              `判定 ${Math.min(done + 1, total)}/${total}：${item.name}`;
         },
         exportItem: async (target) => {
           try {

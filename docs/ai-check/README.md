@@ -112,7 +112,7 @@ sequenceDiagram
   Worker は 0.5 以上（`JEV_THRESHOLD`）の検出だけを返し、0.8 の線引きはアプリ側（`NG_SCORE`）で行います。
 - 対象は「元の画像・動画」（開いたフォルダ、`boxes/` `mosaic/` を除く）か「書き出し済み（`mosaic/`）」を選べます。
   書き出し済みの判定が、納品物の最終チェックに相当します。
-- 1 リクエスト 1 フレームで送信します（Workers Free の CPU 制限対策、失敗フレームの個別記録）。
+- 1 リクエスト 1 フレームで送信します（Workers Free の CPU 制限対策、失敗フレームの個別記録）。Worker への同時リクエストは **アプリ全体で最大 20**（Rust 側の共有上限。ファイル 4 本を同時に処理し、各ファイルの 10 フレームも並列）、FFmpeg のフレーム抽出は同時 6 本までです。429 / 529 / 502〜504・接続エラー（Worker が 200 で返す `model error (TypeSafe API HTTP 429)` を含む）は、Retry-After または 1・2・4 秒の待ちで最大 3 回再送し、401 / 403 は再送せずログインへ誘導します。
 - フレームは長辺 1024px 以下の JPEG です。TypeSafe API は各辺 280〜1568px を要求するため、
   短辺が 280px 未満になる極端な縦横比の素材は API がエラーを返し、そのフレームは「エラー」になります。
 
@@ -164,7 +164,7 @@ Jev は「`state` に対する型付きの質問」に答えるモデルです�
 | `src-tauri/src/check.rs` | 判定対象の列挙、フレーム抽出、Worker 呼び出し、OK/NG 判定          |
 | `src-tauri/src/main.rs`  | Tauri コマンド、トークンのメモリ保持                               |
 | `src/check.ts`           | 保存済み範囲との重なり計算、集計、並べ替え、モザイク候補の外接矩形 |
-| `src/check-ui.ts`        | 判定ダイアログ、ログイン、順次実行・中止、結果表示                 |
+| `src/check-ui.ts`        | 判定ダイアログ、ログイン、並列実行・中止、結果表示                 |
 | `src/renderer.ts`        | 編集画面での検出枠の描画                                           |
 | `worker/src/index.ts`    | ルーティング、デスクトップ受け渡し、入力検証                       |
 | `worker/src/access.ts`   | Access JWT の検証（JWKS 取得・キャッシュ、RS256、aud/iss/exp）     |
