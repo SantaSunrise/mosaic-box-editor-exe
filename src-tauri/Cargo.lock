@@ -1903,7 +1903,7 @@ dependencies = [
 
 [[package]]
 name = "mosaic-box-editor"
-version = "0.0.2"
+version = "0.1.0"
 dependencies = [
  "base64 0.22.1",
  "chrono",

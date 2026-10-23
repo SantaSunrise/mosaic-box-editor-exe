@@ -10,7 +10,7 @@
 ## ダウンロード
 
 [Releases](https://github.com/SantaSunrise/mosaic-box-editor-exe/releases) から
-`Mosaic-Box-Editor-v0.0.2-windows-x64.zip` をダウンロードし、**ZIP全体を展開**して
+`Mosaic-Box-Editor-v0.1.0-windows-x64.zip` をダウンロードし、**ZIP全体を展開**して
 `mosaic-box-editor.exe` を開いてください。
 
 - 対象: Windows 10 / 11、x64。
