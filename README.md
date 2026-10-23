@@ -139,21 +139,22 @@ pnpm package:portable
 
 ## 構成
 
-| 場所                                 | 担当                                     |
-| ------------------------------------ | ---------------------------------------- |
-| `src/main.ts`                        | 編集状態・イベント・Tauri呼び出し        |
-| `src/ui/`                            | 画面テンプレート・アイコン               |
-| `src/renderer.ts`                    | 範囲・モザイクのプレビュー描画           |
-| `src/viewport.ts`                    | ズーム・パンの座標計算                   |
-| `src/batch-export.ts`                | 一括書き出しの順次実行・中止・エラー集計 |
-| `src/types.ts` / `src/appearance.ts` | 共通のデータ型・表示設定                 |
-| `src-tauri/src/project.rs`           | 一覧・範囲の保存と削除                   |
-| `src-tauri/src/mask.rs`              | 書き出し用のマスク生成                   |
-| `src-tauri/src/media.rs`             | FFmpegの解決・動画情報取得・書き出し     |
-| `src-tauri/src/auth.rs` / `check.rs` | AI判定のログイン・フレーム抽出・API呼出  |
-| `src/check.ts` / `src/check-ui.ts`   | AI判定の集計・判定ダイアログ             |
-| `worker/`                            | AI判定API（Cloudflare Worker）           |
-| `tools/`                             | テスト・FFmpeg取得・配布物作成           |
+| 場所                                            | 担当                                              |
+| ----------------------------------------------- | ------------------------------------------------- |
+| `src/main.ts`                                   | 編集状態・イベント・Tauri呼び出し                 |
+| `src/ui/`                                       | 画面テンプレート・アイコン                        |
+| `src/renderer.ts`                               | 範囲・モザイクのプレビュー描画                    |
+| `src/viewport.ts`                               | ズーム・パンの座標計算                            |
+| `src/library.ts` / `src-tauri/src/thumbnail.rs` | 一覧のサムネイル（遅延生成・同時3本）・フォルダ名 |
+| `src/batch-export.ts`                           | 一括書き出しの順次実行・中止・エラー集計          |
+| `src/types.ts` / `src/appearance.ts`            | 共通のデータ型・表示設定                          |
+| `src-tauri/src/project.rs`                      | 一覧・範囲の保存と削除                            |
+| `src-tauri/src/mask.rs`                         | 書き出し用のマスク生成                            |
+| `src-tauri/src/media.rs`                        | FFmpegの解決・動画情報取得・書き出し              |
+| `src-tauri/src/auth.rs` / `check.rs`            | AI判定のログイン・フレーム抽出・API呼出           |
+| `src/check.ts` / `src/check-ui.ts`              | AI判定の集計・判定ダイアログ                      |
+| `worker/`                                       | AI判定API（Cloudflare Worker）                    |
+| `tools/`                                        | テスト・FFmpeg取得・配布物作成                    |
 
 ## ライセンス
 

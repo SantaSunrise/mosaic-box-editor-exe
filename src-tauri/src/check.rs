@@ -222,7 +222,7 @@ fn safe_relative(name: &str) -> Result<&Path, String> {
     Ok(relative)
 }
 
-fn probe_duration(source: &Path) -> Result<f64, String> {
+pub(crate) fn probe_duration(source: &Path) -> Result<f64, String> {
     let probe = media_command("ffprobe")
         .args([
             "-v",
@@ -248,14 +248,25 @@ fn probe_duration(source: &Path) -> Result<f64, String> {
 
 /// Decode one frame (or a still image) as a JPEG no larger than `MAX_EDGE`.
 fn extract_jpeg(source: &Path, time: Option<f64>) -> Result<Vec<u8>, String> {
+    let scale = format!(
+        "scale='min({MAX_EDGE},iw)':'min({MAX_EDGE},ih)':force_original_aspect_ratio=decrease"
+    );
+    extract_jpeg_with(source, time, &scale, "3")
+}
+
+/// Decode one frame (or a still image) as a JPEG, filtered by `scale` and
+/// encoded at ffmpeg quality `quality` (2 best to 31 worst).
+pub(crate) fn extract_jpeg_with(
+    source: &Path,
+    time: Option<f64>,
+    scale: &str,
+    quality: &str,
+) -> Result<Vec<u8>, String> {
     let mut command = media_command("ffmpeg");
     command.args(["-v", "error"]);
     if let Some(time) = time {
         command.args(["-ss", &format!("{time:.3}")]);
     }
-    let scale = format!(
-        "scale='min({MAX_EDGE},iw)':'min({MAX_EDGE},ih)':force_original_aspect_ratio=decrease"
-    );
     let output = command
         .arg("-i")
         .arg(source)
@@ -263,13 +274,13 @@ fn extract_jpeg(source: &Path, time: Option<f64>) -> Result<Vec<u8>, String> {
             "-frames:v",
             "1",
             "-vf",
-            &scale,
+            scale,
             "-f",
             "image2pipe",
             "-c:v",
             "mjpeg",
             "-q:v",
-            "3",
+            quality,
             "-",
         ])
         .output()

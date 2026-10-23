@@ -100,7 +100,7 @@ h1 {
 }
 .workspace {
   display: grid;
-  grid-template-columns: 248px minmax(0, 1fr);
+  grid-template-columns: 272px minmax(0, 1fr);
   gap: 10px;
   min-height: 0;
   padding: 0 12px 12px;
@@ -114,61 +114,53 @@ aside {
   border-radius: 24px;
   overflow: hidden;
 }
-.library-heading {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 18px 16px 0;
-  font-size: 14px;
-  font-weight: 650;
-}
-.library-heading span {
-  font-size: 10px;
-  font-weight: 500;
-  color: var(--muted);
+.brand {
+  min-width: 0;
+  flex: 1;
+  margin-right: 16px;
 }
 .project {
-  padding: 8px 16px 14px;
+  min-width: 0;
+  margin-left: 6px;
+  padding-left: 14px;
+  border-left: 1px solid #38313f;
   color: var(--muted);
-  font-size: 11px;
+  font-size: 12px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  flex-shrink: 0;
 }
-.filters {
+/* Small chips in a 4-column grid (two rows): both groups flow together. */
+.filter-bar {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 6px;
-  padding: 0 10px 12px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 3px;
+  padding: 8px 8px 6px;
   border-bottom: 1px solid #38313f;
 }
-.filters:has(+ .ai-filters) {
-  padding-bottom: 6px;
-  border-bottom: 0;
+.filters {
+  display: contents;
 }
 .filter {
-  justify-content: space-between;
-  min-height: 34px;
-  padding: 6px 10px;
-  background: transparent;
+  gap: 4px;
+  min-height: 0;
+  justify-content: center;
+  padding: 4px 2px;
+  background: #ffffff0d;
   color: var(--muted);
-  font-size: 11px;
-  border-radius: 12px;
+  font-size: 9.5px;
+  line-height: 1.2;
+  white-space: nowrap;
+  border-radius: 999px;
 }
 .filter.active {
   background: var(--secondary);
   color: #f1e6ff;
-  border-radius: 20px;
 }
 .filter b {
-  display: grid;
-  place-items: center;
-  min-width: 22px;
-  height: 22px;
-  border-radius: 8px;
-  background: #ffffff0d;
-  font-size: 11px;
+  font-size: 9.5px;
+  font-weight: 600;
+  opacity: 0.75;
 }
 .videos {
   flex: 1;
@@ -195,13 +187,6 @@ aside {
   padding: 2px 5px;
   border-radius: 8px;
   background: #ffffff15;
-}
-.batch-help {
-  display: block;
-  text-align: center;
-  color: var(--muted);
-  font-size: 10px;
-  margin-top: 6px;
 }
 #batchProgress {
   margin-top: 10px;
@@ -347,15 +332,15 @@ aside {
 .video-row {
   width: 100%;
   display: flex;
+  align-items: center;
   justify-content: flex-start;
   gap: 10px;
   border: 2px solid transparent;
-  border-radius: 16px;
+  border-radius: 14px;
   background: transparent;
   text-align: left;
-  margin: 4px 0;
-  padding: 10px;
-  min-height: 76px;
+  margin: 2px 0;
+  padding: 5px 8px 5px 5px;
 }
 .video-row:hover:not(:disabled) {
   background: var(--container);
@@ -364,25 +349,32 @@ aside {
   background: #352b44;
   border-color: var(--primary);
 }
-.file-status-icon {
+.thumb {
   display: grid;
   place-items: center;
-  flex: 0 0 36px;
-  height: 40px;
-  border-radius: 12px;
+  flex: 0 0 64px;
+  height: 36px;
+  overflow: hidden;
+  border-radius: 8px;
   background: #3a323f;
   color: var(--muted);
 }
-.video-row .file-status-icon .lucide {
-  width: 20px;
-  height: 20px;
+.thumb .lucide {
+  width: 18px;
+  height: 18px;
+}
+.thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
 }
 .file-details {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
   min-width: 0;
-  gap: 7px;
+  gap: 4px;
 }
 .file-name {
   width: 100%;
@@ -844,6 +836,9 @@ footer > span {
   .workspace {
     grid-template-columns: 218px minmax(0, 1fr);
   }
+  .filter-bar {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
   .group-label {
     display: none;
   }
@@ -880,6 +875,9 @@ footer > span {
     padding: 0 8px 8px;
     gap: 8px;
   }
+  .filter-bar {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
   .button-group button {
     font-size: 12px;
     padding: 8px;
@@ -898,9 +896,6 @@ footer > span {
   }
   #play span,
   #loop span {
-    display: none;
-  }
-  .file-status-icon {
     display: none;
   }
   #exportVideo {
@@ -1114,26 +1109,12 @@ footer > span {
   }
 }
 @media (max-width: 850px) {
-  .filter {
-    white-space: nowrap;
-    font-size: 10px;
-    padding: 6px 7px;
-    gap: 3px;
-  }
-  .filter b {
-    min-width: 18px;
-    height: 18px;
-    font-size: 10px;
-  }
-  .library-heading {
-    padding-left: 12px;
-    padding-right: 12px;
-  }
 }
 
 /* AI mosaic check */
 .header-actions {
   display: flex;
+  flex-shrink: 0;
   gap: 8px;
 }
 .status-badges {

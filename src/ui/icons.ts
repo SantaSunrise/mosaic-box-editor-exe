@@ -34,6 +34,7 @@ import {
   Crosshair,
   ScanSearch,
   SquareDashed,
+  Film,
 } from "lucide";
 
 const lucideIcons = {
@@ -71,6 +72,7 @@ const lucideIcons = {
   Crosshair,
   ScanSearch,
   SquareDashed,
+  Film,
 };
 const iconMarkup = (name: string, label?: string) =>
   `<i data-lucide="${name}"></i>${label ? `<span>${label}</span>` : ""}`;

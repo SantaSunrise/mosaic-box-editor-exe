@@ -8,6 +8,7 @@ import { refreshIcons, setButtonIcon } from "./ui/icons";
 import { pendingExports, runBatch } from "./batch-export";
 import { checkPanelTemplate } from "./ui/check-panel";
 import { setupCheckPanel } from "./check-ui";
+import { createThumbnailLoader, folderName } from "./library";
 import {
   aiFilterVerdict,
   candidateFor,
@@ -200,6 +201,49 @@ function matchesFilter(e: VideoEntry) {
   if (aiVerdict) return checkResults.get(e.boxKey)?.verdict === aiVerdict;
   return filter === "all" || statusOf(e)[1] === filter;
 }
+// Library thumbnails: made by ffmpeg on demand, three at a time, only for rows
+// that scroll into view, and kept in memory for the opened folder.
+const thumbnails = createThumbnailLoader(
+  (path) => invoke<string>("video_thumbnail", { root, path }),
+  3,
+);
+let thumbObserver: IntersectionObserver | null = null;
+function thumbMarkup(e: VideoEntry) {
+  const url = thumbnails.cached(e.path);
+  return `<span class="thumb ${url ? "loaded" : ""}" data-path="${escapeHtml(e.path)}" aria-hidden="true">${
+    url ? `<img src="${url}" alt="" />` : '<i data-lucide="film"></i>'
+  }</span>`;
+}
+function showThumbnail(el: HTMLElement) {
+  const path = el.dataset.path!;
+  void thumbnails.request(path).then((url) => {
+    if (!url || !el.isConnected) return;
+    el.classList.add("loaded");
+    el.innerHTML = `<img src="${url}" alt="" />`;
+    thumbObserver?.unobserve(el);
+  });
+}
+function watchThumbnails() {
+  thumbObserver?.disconnect();
+  const pending = $("videos").querySelectorAll<HTMLElement>(
+    ".thumb:not(.loaded)",
+  );
+  if (typeof IntersectionObserver === "undefined") {
+    pending.forEach(showThumbnail);
+    return;
+  }
+  thumbObserver = new IntersectionObserver(
+    (changes) => {
+      for (const change of changes) {
+        const el = change.target as HTMLElement;
+        if (change.isIntersecting) showThumbnail(el);
+        else thumbnails.cancel(el.dataset.path!);
+      }
+    },
+    { root: $("videos"), rootMargin: "120px 0px" },
+  );
+  pending.forEach((el) => thumbObserver!.observe(el));
+}
 function renderList() {
   const visible = entries
     .map((e, i) => ({ e, i }))
@@ -212,7 +256,7 @@ function renderList() {
         const ai = verdict
           ? `<span class="ai-badge ${verdict}">AI ${verdictLabel[verdict]}</span>`
           : "";
-        return `<button class="video-row ${e === current ? "active" : ""}" data-i="${i}" aria-current="${e === current}" title="${escapeHtml(e.name)} — ${label}"><span class="file-status-icon ${status}" aria-hidden="true"><i data-lucide="${icon}"></i></span><span class="file-details"><span class="file-name">${escapeHtml(e.name)}</span><span class="status-badges"><span class="status-badge ${status}"><i data-lucide="${icon}"></i>${label}</span>${ai}</span></span></button>`;
+        return `<button class="video-row ${e === current ? "active" : ""}" data-i="${i}" aria-current="${e === current}" title="${escapeHtml(e.name)} — ${label}">${thumbMarkup(e)}<span class="file-details"><span class="file-name">${escapeHtml(e.name)}</span><span class="status-badges"><span class="status-badge ${status}"><i data-lucide="${icon}"></i>${label}</span>${ai}</span></span></button>`;
       })
       .join("") ||
     `<p class="list-empty">${
@@ -243,6 +287,7 @@ function renderList() {
       (el) => (el.onclick = () => select(entries[Number(el.dataset.i)])),
     );
   refreshIcons($("videos"));
+  watchThumbnails();
   updateBatchButton();
 }
 async function select(entry: VideoEntry) {
@@ -298,7 +343,8 @@ async function openProject(selected: string) {
     checkPanel.reset();
     $("batchProgress").hidden = true;
     $("batchErrors").hidden = true;
-    $("project").textContent = root;
+    thumbnails.clear();
+    $("project").textContent = folderName(root);
     $("project").title = root;
     current = null;
     operations = [];

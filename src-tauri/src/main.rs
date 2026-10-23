@@ -78,6 +78,18 @@ async fn check_media(
 }
 
 #[tauri::command]
+async fn video_thumbnail(root: String, path: String) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        mosaic_box_core::video_thumbnail_data_url(
+            std::path::Path::new(&root),
+            std::path::Path::new(&path),
+        )
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
 fn scan_project(root: String) -> Result<Vec<VideoEntry>, String> {
     mosaic_box_core::scan_project(std::path::Path::new(&root))
 }
@@ -136,6 +148,7 @@ fn main() {
         .manage(Session::default())
         .invoke_handler(tauri::generate_handler![
             scan_project,
+            video_thumbnail,
             save_selection,
             export_video,
             export_saved_video,
