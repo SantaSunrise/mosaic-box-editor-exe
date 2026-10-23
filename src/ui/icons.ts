@@ -33,6 +33,7 @@ import {
   LogOut,
   Crosshair,
   ScanSearch,
+  SquareDashed,
 } from "lucide";
 
 const lucideIcons = {
@@ -69,6 +70,7 @@ const lucideIcons = {
   LogOut,
   Crosshair,
   ScanSearch,
+  SquareDashed,
 };
 const iconMarkup = (name: string, label?: string) =>
   `<i data-lucide="${name}"></i>${label ? `<span>${label}</span>` : ""}`;

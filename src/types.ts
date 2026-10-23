@@ -44,7 +44,19 @@ export type Detection = {
   score: number;
   /** Normalized [x0, y0, x1, y1]. */
   box: [number, number, number, number];
+  /** False when the model gave no box and `box` is the whole frame. */
+  located: boolean;
   boxConfidence?: number;
+};
+export type Verdict = "ok" | "review" | "ng" | "error";
+/** Smallest rectangle around every located NG box of one video. */
+export type Candidate = {
+  /** Normalized [x0, y0, x1, y1], the same 0–1 space as saved selections. */
+  box: [number, number, number, number];
+  /** Same rectangle in pixels of the original video (rotation applied). */
+  pixels: { x: number; y: number; width: number; height: number } | null;
+  /** Number of detections the rectangle was built from. */
+  detections: number;
 };
 export type FrameResult = {
   index: number;
@@ -57,7 +69,10 @@ export type FileCheckResult = {
   kind: "image" | "video";
   source: CheckScope;
   key: string;
-  verdict: "ok" | "ng" | "error";
+  verdict: Verdict;
+  /** Original display size, for converting normalized boxes to pixels. */
+  width?: number | null;
+  height?: number | null;
   frames: FrameResult[];
   model: string;
   inputTokens: number;

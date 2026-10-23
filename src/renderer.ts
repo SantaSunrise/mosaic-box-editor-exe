@@ -9,6 +9,8 @@ type RenderOptions = {
   rangeOpacity: { alpha: number };
   /** AI check detections on the current frame, drawn as outlines. */
   highlights?: { box: [number, number, number, number]; covered: boolean }[];
+  /** "モザイク候補": rectangle around the boxes of all NG frames of the clip. */
+  candidate?: [number, number, number, number] | null;
 };
 
 /** Reuse offscreen surfaces while drawing a selection or mosaic preview. */
@@ -115,6 +117,7 @@ export function createRenderer(
     rangeColor,
     rangeOpacity,
     highlights = [],
+    candidate = null,
   }: RenderOptions) {
     const video = typeof source === "function" ? source() : source;
     const w = Math.max(1, Math.round(fitted.width)),
@@ -127,7 +130,7 @@ export function createRenderer(
     if (!operations.length && !draft) {
       cachedOperations = undefined;
       blockDirty = true;
-      drawHighlights(w, h, highlights);
+      drawHighlights(w, h, highlights, candidate);
       return;
     }
     const maskChanged =
@@ -180,7 +183,7 @@ export function createRenderer(
       ctx.fillRect(0, 0, w, h);
       ctx.restore();
     }
-    drawHighlights(w, h, highlights);
+    drawHighlights(w, h, highlights, candidate);
   }
   // Dashed red: outside the saved selection (unmosaicked suspect).
   // Solid white: already inside the selection.
@@ -188,10 +191,22 @@ export function createRenderer(
     w: number,
     h: number,
     highlights: NonNullable<RenderOptions["highlights"]>,
+    candidate: RenderOptions["candidate"],
   ) {
-    if (!highlights.length) return;
+    if (!highlights.length && !candidate) return;
     ctx.save();
     ctx.lineWidth = 2;
+    if (candidate) {
+      // Cyan long dashes: the suggested mosaic range (not part of the selection).
+      ctx.strokeStyle = "#4dd0e1";
+      ctx.setLineDash([14, 6]);
+      ctx.strokeRect(
+        candidate[0] * w,
+        candidate[1] * h,
+        (candidate[2] - candidate[0]) * w,
+        (candidate[3] - candidate[1]) * h,
+      );
+    }
     for (const { box, covered } of highlights) {
       ctx.strokeStyle = covered ? "#ffffff" : "#ff5a6e";
       ctx.setLineDash(covered ? [] : [8, 5]);

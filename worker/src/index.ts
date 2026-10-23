@@ -7,8 +7,8 @@
 //
 // No cron triggers, no storage: images are only forwarded to Workers AI.
 import { verifyAccessJwt, type AccessClaims } from "./access.ts";
+import { backendName, BackendError, runJev, type JevEnv } from "./backend.ts";
 import {
-  buildJevInput,
   inputTokens,
   isSupportedMime,
   parseJevAnswers,
@@ -16,23 +16,13 @@ import {
   type Frame,
 } from "./jev.ts";
 
-export interface Env {
-  AI: {
-    run(
-      model: string,
-      inputs: unknown,
-      options?: { extraHeaders?: Record<string, string> },
-    ): Promise<unknown>;
-  };
+export interface Env extends JevEnv {
   /** e.g. `your-team.cloudflareaccess.com` */
   ACCESS_TEAM_DOMAIN: string;
   /** Application Audience (AUD) tag of the Access application. */
   ACCESS_AUD: string;
-  JEV_MODEL: string;
   /** Minimum yes probability that counts as a detection. */
   JEV_THRESHOLD?: string;
-  /** "true" sends `TypeSafe-Danger-Zone-Images: true` with each run. */
-  JEV_IMAGE_HEADER?: string;
 }
 
 export const MAX_FRAMES = 10;
@@ -111,32 +101,39 @@ async function detect(request: Request, env: Env): Promise<Response> {
     return json({ error: String((error as Error).message ?? error) }, 400);
   }
   const threshold = Number(env.JEV_THRESHOLD ?? "0.5");
-  const options =
-    env.JEV_IMAGE_HEADER === "false"
-      ? undefined
-      : { extraHeaders: { "TypeSafe-Danger-Zone-Images": "true" } };
+  let backend: string;
+  try {
+    backend = backendName(env);
+  } catch (error) {
+    return json({ error: (error as Error).message }, 500);
+  }
   let tokens = 0;
   const results: { id: string; detections: Detection[]; error?: string }[] = [];
   for (const frame of frames) {
     try {
-      const output = await env.AI.run(
-        env.JEV_MODEL,
-        buildJevInput(frame),
-        options,
-      );
+      const output = await runJev(env, frame);
       tokens += inputTokens(output);
       results.push({
         id: frame.id,
         detections: parseJevAnswers(output, threshold),
       });
     } catch (error) {
-      // Never echo the image back; the message is enough to debug.
+      // Never echo the image or the key back. Only messages written for the
+      // app (BackendError) are passed on; anything else is a generic failure.
       console.error("jev run failed", { id: frame.id, error: String(error) });
-      results.push({ id: frame.id, detections: [], error: "model error" });
+      results.push({
+        id: frame.id,
+        detections: [],
+        error:
+          error instanceof BackendError
+            ? `model error (${error.message})`
+            : "model error",
+      });
     }
   }
   return json({
     model: env.JEV_MODEL,
+    backend,
     frames: results,
     usage: { inputTokens: tokens },
   });

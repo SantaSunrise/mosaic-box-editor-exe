@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildJevInput, inputTokens, parseJevAnswers } from "../src/jev.ts";
+import {
+  buildJevInput,
+  IMAGE_FORMATS,
+  inputTokens,
+  parseJevAnswers,
+} from "../src/jev.ts";
 
 const answers = (noul, box, confidence = 0.9) => ({
   model: "jev-1.14.0",
@@ -13,14 +18,31 @@ const answers = (noul, box, confidence = 0.9) => ({
 
 test("state references the single image asset", () => {
   const input = buildJevInput({ id: "3", mime: "image/jpeg", data: "AAAA" });
-  assert.deepEqual(input.state, { frame: "frame-3" });
-  assert.deepEqual(input.assets["frame-3"], {
+  assert.deepEqual(input.state, { frame: "img-frame-3" });
+  assert.deepEqual(input.assets["img-frame-3"], {
     type: "image",
-    format: "jpeg",
+    format: "jpg",
     data_base64: "AAAA",
   });
   assert.equal(input.questions.genitals_present.type, "noul");
   assert.equal(input.questions.genitals_box.type, "box");
+  assert.match(
+    input.questions.genitals_present.instructions,
+    /uncensored genitals/,
+  );
+});
+
+test("the image format name follows the backend", () => {
+  const frame = { id: "0", mime: "image/jpeg", data: "AAAA" };
+  assert.equal(
+    buildJevInput(frame, IMAGE_FORMATS["workers-ai"]).assets["img-frame-0"]
+      .format,
+    "jpeg",
+  );
+  assert.equal(
+    buildJevInput({ ...frame, mime: "image/png" }).assets["img-frame-0"].format,
+    "png",
+  );
 });
 
 test("edges become a normalized [x0, y0, x1, y1] box above the threshold", () => {
@@ -33,6 +55,7 @@ test("edges become a normalized [x0, y0, x1, y1] box above the threshold", () =>
       label: "性器",
       score: 0.93,
       box: [0.49, 0.11, 0.83, 0.51],
+      located: true,
       boxConfidence: 0.9,
     },
   ]);
@@ -55,6 +78,7 @@ test("a positive answer with a broken box still counts, over the whole frame", (
     0.5,
   );
   assert.deepEqual(detection.box, [0, 0, 1, 1]);
+  assert.equal(detection.located, false);
 });
 
 test("a missing yes/no answer is an error, not a clean frame", () => {

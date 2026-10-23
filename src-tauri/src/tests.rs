@@ -157,20 +157,25 @@ mod ai_check {
     use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
     use std::fs;
 
-    fn frame(detections: usize, error: bool) -> FrameResult {
+    fn frame_with(scores: &[f64], error: bool) -> FrameResult {
         FrameResult {
             index: 0,
             time: None,
-            detections: (0..detections)
-                .map(|_| Detection {
+            detections: scores
+                .iter()
+                .map(|&score| Detection {
                     label: "genitals".into(),
-                    score: 0.9,
+                    score,
                     box_: [0.1, 0.1, 0.2, 0.2],
+                    located: true,
                     box_confidence: None,
                 })
                 .collect(),
             error: error.then(|| "failed".into()),
         }
+    }
+    fn frame(detections: usize, error: bool) -> FrameResult {
+        frame_with(&vec![0.9; detections], error)
     }
 
     #[test]
@@ -195,6 +200,28 @@ mod ai_check {
         frames[7] = frame(0, false);
         assert_eq!(verdict(&frames), "error");
         assert_eq!(verdict(&[]), "error");
+    }
+
+    #[test]
+    fn detections_below_the_ng_score_only_need_a_look() {
+        let mut frames: Vec<_> = (0..10).map(|_| frame(0, false)).collect();
+        frames[2] = frame_with(&[0.6], false);
+        assert_eq!(verdict(&frames), "review");
+        frames[2] = frame_with(&[0.79], false);
+        assert_eq!(verdict(&frames), "review");
+        frames[2] = frame_with(&[0.8], false);
+        assert_eq!(verdict(&frames), "ng");
+        // A failed frame outranks "needs a look".
+        frames[2] = frame_with(&[0.6], false);
+        frames[5] = frame(0, true);
+        assert_eq!(verdict(&frames), "error");
+    }
+
+    #[test]
+    fn a_detection_without_located_defaults_to_located() {
+        let d: Detection =
+            serde_json::from_str(r#"{"label":"x","score":0.9,"box":[0,0,1,1]}"#).unwrap();
+        assert!(d.located);
     }
 
     #[test]
@@ -371,5 +398,7 @@ mod ai_check {
         assert_eq!(checked.frames[4].detections.len(), 1);
         assert!((checked.frames[4].time.unwrap() - 0.9).abs() < 1e-9);
         assert_eq!(checked.input_tokens, 7560);
+        // Source size is reported so normalized boxes can be turned into pixels.
+        assert_eq!((checked.width, checked.height), (Some(1600), Some(900)));
     }
 }

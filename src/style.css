@@ -1160,6 +1160,11 @@ footer > span {
   background: #5a1f2a;
   color: #ffd9de;
 }
+.ai-badge.review,
+.verdict.review {
+  background: #4a4220;
+  color: #fff0a8;
+}
 .ai-badge.error,
 .verdict.error {
   background: #4c3d25;
@@ -1199,22 +1204,24 @@ footer > span {
   align-items: center;
   gap: 8px 10px;
 }
-.api-field {
-  display: flex;
-  flex: 1 1 320px;
-  align-items: center;
-  gap: 8px;
+.check-target {
+  margin: 0;
   color: var(--muted);
   font-size: 12px;
 }
-.api-field input {
-  flex: 1;
-  min-width: 0;
-  padding: 9px 12px;
-  border: 1px solid var(--outline);
-  border-radius: 12px;
-  color: inherit;
-  background: var(--container);
+.candidate-line {
+  color: #bff3fa;
+}
+.candidate-tag {
+  padding: 2px 6px;
+  border: 1px dashed #4dd0e1;
+  border-radius: 6px;
+  font-size: 11px;
+  white-space: nowrap;
+}
+#candidateSection button {
+  border: 1px dashed #4dd0e1;
+  color: #bff3fa;
 }
 .auth-state,
 .check-status,

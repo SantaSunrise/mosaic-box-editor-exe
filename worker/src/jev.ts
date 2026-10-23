@@ -4,6 +4,10 @@
 // `box` question type are experimental in jev-1.14 and need the
 // `TypeSafe-Danger-Zone-Images: true` header. A box question returns a single
 // box, so each category yields at most one region per frame.
+//
+// The yes/no wording is the one the team validated with ng_check.py (Jev
+// 1.13/1.14 on 18 s13 clips); the box question was tried on the same API
+// (see docs/ai-check/estimate.md).
 
 export type Category = {
   id: string;
@@ -19,9 +23,9 @@ export const CATEGORIES: Category[] = [
     id: "genitals",
     label: "性器",
     present:
-      "Does `frame` show human genitals or an anus that are visible without censoring? Answer no if they are covered by mosaic, pixelation, blur, a black bar, clothing or anything else.",
+      "This is a frame from an adult video. Are uncensored genitals (penis or vulva) clearly visible in `frame`, i.e. NOT covered by a mosaic, pixelation or blur censor and not hidden by clothing?",
     locate:
-      "the uncensored human genitals or anus in `frame` that would need a mosaic",
+      "the uncensored genitals (penis or vulva) in `frame` that are NOT covered by a mosaic, pixelation or blur censor",
   },
 ];
 
@@ -30,17 +34,26 @@ export type Detection = {
   label: string;
   score: number;
   box: [number, number, number, number];
+  /** False when the model gave no usable box and `box` is the whole frame. */
+  located: boolean;
   boxConfidence?: number;
 };
 
-const FORMATS: Record<string, string> = {
-  "image/jpeg": "jpeg",
-  "image/png": "png",
-};
-export const isSupportedMime = (mime: string) => mime in FORMATS;
+/** Image `format` values per backend: the TypeSafe API takes `jpg`; the Workers AI schema says `jpeg`. */
+export const IMAGE_FORMATS = {
+  "typesafe-api": { "image/jpeg": "jpg", "image/png": "png" },
+  "workers-ai": { "image/jpeg": "jpeg", "image/png": "png" },
+} as const;
+export type Formats = Record<string, string>;
+export const isSupportedMime = (mime: string) =>
+  mime in IMAGE_FORMATS["typesafe-api"];
 
-export function buildJevInput(frame: Frame, categories = CATEGORIES) {
-  const asset = `frame-${frame.id}`;
+export function buildJevInput(
+  frame: Frame,
+  formats: Formats = IMAGE_FORMATS["typesafe-api"],
+  categories = CATEGORIES,
+) {
+  const asset = `img-frame-${frame.id}`;
   const questions: Record<string, { type: string; instructions: string }> = {};
   for (const category of categories) {
     questions[`${category.id}_present`] = {
@@ -58,7 +71,7 @@ export function buildJevInput(frame: Frame, categories = CATEGORIES) {
     assets: {
       [asset]: {
         type: "image",
-        format: FORMATS[frame.mime],
+        format: formats[frame.mime],
         data_base64: frame.data,
       },
     },
@@ -93,6 +106,7 @@ export function parseJevAnswers(
     const answer = answers[`${category.id}_box`];
     const edges = answer?.box;
     let box: Detection["box"] = [0, 0, 1, 1];
+    let located = false;
     if (
       edges &&
       [edges.left, edges.top, edges.right, edges.bottom].every(finite)
@@ -101,12 +115,16 @@ export function parseJevAnswers(
         x1 = clamp01(Math.max(edges.left, edges.right)),
         y0 = clamp01(Math.min(edges.top, edges.bottom)),
         y1 = clamp01(Math.max(edges.top, edges.bottom));
-      if (x1 > x0 && y1 > y0) box = [x0, y0, x1, y1];
+      if (x1 > x0 && y1 > y0) {
+        box = [x0, y0, x1, y1];
+        located = true;
+      }
     }
     detections.push({
       label: category.label,
       score: probability,
       box,
+      located,
       ...(finite(answer?.confidence)
         ? { boxConfidence: answer.confidence }
         : {}),

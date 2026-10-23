@@ -1,12 +1,15 @@
-// AI check dialog: Access login, sequential checks and the result list.
+// 局部モザイク確認 dialog: Access login, sequential checks and the result list.
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { runBatch } from "./batch-export";
 import {
+  candidateFor,
   formatTime,
   isAuthError,
   isCovered,
+  NG_SCORE,
   sortResults,
   summarize,
+  verdictLabel,
 } from "./check";
 import { refreshIcons } from "./ui/icons";
 import type {
@@ -30,7 +33,9 @@ export type CheckHost = {
   resultsChanged(results: ReadonlyMap<string, FileCheckResult>): void;
 };
 
-const API_URL_STORAGE = "mosaic-check-api";
+/** Access-protected Worker; override at build time with VITE_CHECK_API_URL. */
+export const DEFAULT_API_URL = "https://mosaic-check.santasunrise.app";
+const API_URL = import.meta.env.VITE_CHECK_API_URL || DEFAULT_API_URL;
 const $ = <T extends HTMLElement>(id: string) =>
   document.querySelector<T>(`#${id}`)!;
 const escapeHtml = (value: string) =>
@@ -41,48 +46,63 @@ const escapeHtml = (value: string) =>
         c
       ]!,
   );
-const verdictLabel = { ok: "OK", ng: "NG", error: "エラー" } as const;
 
 export function setupCheckPanel(host: CheckHost) {
   const dialog = $("checkDialog") as HTMLDialogElement;
-  const apiBase = $("apiBase") as HTMLInputElement;
   let auth: AuthInfo | null = null;
   let scope: CheckScope = "original";
   let checking = false,
-    cancelled = false;
+    cancelled = false,
+    loggingIn = false;
   let checkedRoot = "";
   let results: FileCheckResult[] = [];
   // Original-folder results by key, for badges in the video list.
   const byKey = new Map<string, FileCheckResult>();
 
-  try {
-    apiBase.value =
-      localStorage.getItem(API_URL_STORAGE) ||
-      import.meta.env.VITE_CHECK_API_URL ||
-      "";
-  } catch {
-    apiBase.value = import.meta.env.VITE_CHECK_API_URL || "";
-  }
-
   function renderAuth() {
     const expires = auth?.expiresAt
       ? new Date(auth.expiresAt * 1000).toLocaleString()
       : "";
-    $("authState").textContent = auth
-      ? `${auth.email ?? "ログイン済み"}（${expires} まで）`
-      : "未ログイン";
-    $("login").hidden = !!auth;
+    if (!loggingIn)
+      $("authState").textContent = auth
+        ? `Cloudflareにログイン済み：${auth.email ?? ""}（${expires} まで）`
+        : "未ログイン：「ログインして確認を開始」でブラウザにCloudflareのログイン画面が開きます";
     $("logout").hidden = !auth;
-    apiBase.disabled = !!auth || checking;
+    $("logout").toggleAttribute("disabled", checking);
+    $("checkTarget").textContent = host.root()
+      ? `対象フォルダ：${host.root()}`
+      : "先に動画フォルダを開いてください";
     $("startCheck").toggleAttribute(
       "disabled",
-      !auth || checking || !host.root(),
+      checking || loggingIn || !host.root(),
     );
+    $("startCheck").querySelector("span")!.textContent = auth
+      ? "確認を開始"
+      : "ログインして確認を開始";
   }
 
   async function refreshAuth() {
     auth = await invoke<AuthInfo | null>("auth_status").catch(() => null);
     renderAuth();
+  }
+
+  /** Opens the browser for the Access login. True when logged in. */
+  async function login() {
+    loggingIn = true;
+    renderAuth();
+    $("authState").textContent = "ブラウザでログインしてください（5分以内）…";
+    try {
+      auth = await invoke<AuthInfo>("auth_login", { apiBase: API_URL });
+      return true;
+    } catch (error) {
+      $("authState").textContent = "ログインできませんでした：" + error;
+      return false;
+    } finally {
+      loggingIn = false;
+      if (auth) renderAuth();
+      else
+        $("startCheck").toggleAttribute("disabled", checking || !host.root());
+    }
   }
 
   function renderResults() {
@@ -101,7 +121,7 @@ export function setupCheckPanel(host: CheckHost) {
     );
     $("checkSummary").hidden = false;
     $("checkSummary").innerHTML =
-      `<b class="verdict ng">NG ${summary.ng}</b><b class="verdict ok">OK ${summary.ok}</b><b class="verdict error">エラー ${summary.error}</b>` +
+      `<b class="verdict ng">NG ${summary.ng}</b><b class="verdict review">要確認 ${summary.review}</b><b class="verdict ok">OK ${summary.ok}</b><b class="verdict error">エラー ${summary.error}</b>` +
       `<span>未モザイク疑い ${summary.uncovered}件</span><span>判定 ${summary.frames}フレーム・入力 ${summary.inputTokens.toLocaleString()}トークン</span>`;
     root.innerHTML = sortResults(results)
       .map((result) => {
@@ -142,12 +162,27 @@ export function setupCheckPanel(host: CheckHost) {
                 .join("")}</figure>`
             : "";
         const detail =
-          result.verdict === "ng"
-            ? `NG ${hitFrames.length}/${result.frames.length}フレーム`
+          result.verdict === "ng" || result.verdict === "review"
+            ? `${verdictLabel[result.verdict]} ${hitFrames.length}/${result.frames.length}フレーム`
             : result.verdict === "error"
               ? "判定できないフレームがあります"
               : `${result.frames.length}フレーム検出なし`;
-        return `<details class="check-row ${result.verdict}" ${result.verdict === "ok" ? "" : "open"}><summary><b class="verdict ${result.verdict}">${verdictLabel[result.verdict]}</b><span class="check-name" title="${escapeHtml(result.name)}">${escapeHtml(result.name)}</span><span class="check-detail">${detail}</span>${uncovered ? '<span class="suspect">未モザイク疑い</span>' : ""}</summary>${frames || preview ? `<ul>${frames}</ul>${preview}` : ""}</details>`;
+        const candidate = candidateFor(result);
+        const candidateFrame = result.frames.find((f) =>
+          f.detections.some((d) => d.score >= NG_SCORE && d.located),
+        );
+        const candidateLine = candidate
+          ? `<li class="candidate-line"><span class="candidate-tag">モザイク候補</span><span>${
+              candidate.pixels
+                ? `${candidate.pixels.width}×${candidate.pixels.height}px（左上 ${candidate.pixels.x}, ${candidate.pixels.y}）`
+                : `${Math.round((candidate.box[2] - candidate.box[0]) * 100)}%×${Math.round((candidate.box[3] - candidate.box[1]) * 100)}%`
+            }・NG ${candidate.detections}件の枠を包む1つの矩形</span>${
+              openable && candidateFrame
+                ? `<button class="quiet jump" data-result="${index}" data-frame="${candidateFrame.index}"><i data-lucide="crosshair"></i><span>編集画面で候補を見る</span></button>`
+                : ""
+            }</li>`
+          : "";
+        return `<details class="check-row ${result.verdict}" ${result.verdict === "ok" ? "" : "open"}><summary><b class="verdict ${result.verdict}">${verdictLabel[result.verdict]}</b><span class="check-name" title="${escapeHtml(result.name)}">${escapeHtml(result.name)}</span><span class="check-detail">${detail}</span>${uncovered ? '<span class="suspect">未モザイク疑い</span>' : ""}</summary>${frames || candidateLine || preview ? `<ul>${candidateLine}${frames}</ul>${preview}` : ""}</details>`;
       })
       .join("");
     root.querySelectorAll<HTMLButtonElement>(".jump").forEach((button) => {
@@ -181,7 +216,9 @@ export function setupCheckPanel(host: CheckHost) {
   }
 
   async function start() {
-    if (checking || host.busy() || !auth || !host.root()) return;
+    if (checking || loggingIn || host.busy() || !host.root()) return;
+    // Not logged in yet: guide to the Cloudflare login, then check.
+    if (!auth && !(await login())) return;
     const root = host.root();
     setChecking(true);
     cancelled = false;
@@ -201,7 +238,7 @@ export function setupCheckPanel(host: CheckHost) {
         $("checkStatus").textContent =
           scope === "mosaic"
             ? "mosaic フォルダに書き出し済みの動画がありません"
-            : "判定できる画像・動画がありません";
+            : "確認できる画像・動画がありません";
         return;
       }
       meter.max = targets.length;
@@ -249,7 +286,7 @@ export function setupCheckPanel(host: CheckHost) {
       if (authFailed) {
         await refreshAuth();
         $("checkStatus").textContent =
-          "ログインの有効期限が切れたため中断しました。ログインし直してください";
+          "ログインの有効期限が切れたため中断しました。もう一度ボタンを押してログインし直してください";
       } else {
         $("checkStatus").textContent =
           `判定完了：${report.completed.length}件` +
@@ -266,29 +303,11 @@ export function setupCheckPanel(host: CheckHost) {
 
   $("openCheck").onclick = () => {
     renderResults();
+    renderAuth();
     void refreshAuth();
     dialog.showModal();
   };
   $("closeCheck").onclick = () => dialog.close();
-  $("login").onclick = async () => {
-    $("login").setAttribute("disabled", "");
-    $("authState").textContent = "ブラウザでログインしてください（5分以内）…";
-    try {
-      auth = await invoke<AuthInfo>("auth_login", { apiBase: apiBase.value });
-      apiBase.value = auth.apiBase;
-      try {
-        localStorage.setItem(API_URL_STORAGE, auth.apiBase);
-      } catch {
-        /* The URL can be typed again next time. */
-      }
-      renderAuth();
-    } catch (error) {
-      renderAuth();
-      $("authState").textContent = "ログインできませんでした：" + error;
-    } finally {
-      $("login").removeAttribute("disabled");
-    }
-  };
   $("logout").onclick = async () => {
     await invoke("auth_logout");
     auth = null;
@@ -312,7 +331,7 @@ export function setupCheckPanel(host: CheckHost) {
   });
   // Escape would close the dialog mid-run; keep it open while checking.
   dialog.addEventListener("cancel", (event) => {
-    if (checking) event.preventDefault();
+    if (checking || loggingIn) event.preventDefault();
   });
 
   return {

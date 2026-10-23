@@ -1,5 +1,6 @@
-# Mosaic check API. All IDs below are placeholders; see docs/ai-check/deploy.md.
-# This Worker has no [triggers] / crons on purpose.
+# Mosaic check API. See docs/ai-check/deploy.md.
+# Placeholders: replace account_id (or set CLOUDFLARE_ACCOUNT_ID, and do not commit it),
+# the route host, and ACCESS_AUD. This Worker has no [triggers] / crons on purpose.
 name = "mosaic-check"
 main = "src/index.ts"
 compatibility_date = "2026-10-01"
@@ -11,6 +12,7 @@ workers_dev = false
 preview_urls = false
 routes = [{ pattern = "mosaic-check.example.com", custom_domain = true }]
 
+# Only used when JEV_BACKEND = "workers-ai".
 [ai]
 binding = "AI"
 
@@ -18,9 +20,16 @@ binding = "AI"
 ACCESS_TEAM_DOMAIN = "your-team.cloudflareaccess.com"
 # Application Audience (AUD) tag of the Access application (not a secret).
 ACCESS_AUD = "0000000000000000000000000000000000000000000000000000000000000000"
-JEV_MODEL = "typesafe/jev-1.14.0"
+# "typesafe-api": TypeSafe's HTTP API with the secret TYPESAFE_API_KEY (default).
+# "workers-ai":   Workers AI binding; set JEV_MODEL = "typesafe/jev-1.14.0" with it.
+JEV_BACKEND = "typesafe-api"
+JEV_MODEL = "jev-1.14.0"
+# Yes probability from which a frame is reported. The app calls >= 0.8 NG and
+# 0.5 to 0.8 "needs a look" (same rule as ng_check.py).
 JEV_THRESHOLD = "0.5"
 JEV_IMAGE_HEADER = "true"
+
+# Secret (never in this file):  wrangler secret put TYPESAFE_API_KEY
 
 [observability]
 enabled = true

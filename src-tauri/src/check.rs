@@ -12,6 +12,9 @@ use std::{
 };
 
 pub const FRAMES_PER_VIDEO: usize = 10;
+/// A detection at or above this probability is NG; below it (down to the
+/// Worker's threshold, 0.5) the frame only "needs a look". Same rule as ng_check.py.
+pub const NG_SCORE: f64 = 0.8;
 /// Longest edge sent to the model. Smaller frames keep the request and the
 /// input token count bounded; see docs/ai-check/estimate.md.
 pub const MAX_EDGE: u32 = 1024;
@@ -41,8 +44,15 @@ pub struct Detection {
     /// Normalized `[x0, y0, x1, y1]`, the same 0–1 space as saved selections.
     #[serde(rename = "box")]
     pub box_: [f64; 4],
+    /// False when the model gave no usable box and `box` is the whole frame.
+    #[serde(default = "located_default")]
+    pub located: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub box_confidence: Option<f64>,
+}
+
+fn located_default() -> bool {
+    true
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
@@ -63,8 +73,12 @@ pub struct FileCheckResult {
     pub kind: String,
     pub source: String,
     pub key: String,
-    /// `ok`, `ng` or `error`.
+    /// `ng`, `error`, `review` (detections below NG_SCORE only) or `ok`.
     pub verdict: String,
+    /// Display size of the original (rotation applied) so boxes, which are
+    /// normalized, can be converted to source pixels. `None` if unreadable.
+    pub width: Option<usize>,
+    pub height: Option<usize>,
     pub frames: Vec<FrameResult>,
     pub model: String,
     /// Input tokens reported by the model, for the free-tier estimate.
@@ -128,13 +142,17 @@ pub fn frame_times(duration: f64, count: usize) -> Vec<f64> {
         .collect()
 }
 
-/// One detection anywhere makes the file NG. Without detections, any frame
-/// that could not be checked makes the result an error rather than OK.
+/// A detection at NG_SCORE or above makes the file NG. Otherwise a frame that
+/// could not be checked makes it an error rather than OK, then weaker
+/// detections make it `review`.
 pub fn verdict(frames: &[FrameResult]) -> &'static str {
-    if frames.iter().any(|f| !f.detections.is_empty()) {
+    let detections = || frames.iter().flat_map(|f| f.detections.iter());
+    if detections().any(|d| d.score >= NG_SCORE) {
         "ng"
     } else if frames.is_empty() || frames.iter().any(|f| f.error.is_some()) {
         "error"
+    } else if detections().next().is_some() {
+        "review"
     } else {
         "ok"
     }
@@ -375,6 +393,10 @@ pub fn check_target(
         frames.push(result);
     }
     frames.sort_by_key(|f| f.index);
+    let (width, height) = match crate::media::probe_dimensions(&source) {
+        Ok((w, h)) => (Some(w), Some(h)),
+        Err(_) => (None, None),
+    };
     Ok(FileCheckResult {
         name: name.replace('\\', "/"),
         kind: if is_image { "image" } else { "video" }.into(),
@@ -384,6 +406,8 @@ pub fn check_target(
             .to_string_lossy()
             .replace('\\', "/"),
         verdict: verdict(&frames).into(),
+        width,
+        height,
         frames,
         model,
         input_tokens,

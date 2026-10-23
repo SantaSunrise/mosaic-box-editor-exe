@@ -84,6 +84,28 @@ pub(crate) fn dimensions_from_probe(bytes: &[u8]) -> Result<(usize, usize), Stri
     })
 }
 
+/// Display size of the first video stream (or an image) with rotation applied.
+pub(crate) fn probe_dimensions(source: &Path) -> Result<(usize, usize), String> {
+    let probe = media_command("ffprobe")
+        .args([
+            "-v",
+            "error",
+            "-select_streams",
+            "v:0",
+            "-show_entries",
+            "stream=width,height:stream_tags=rotate:stream_side_data=rotation",
+            "-of",
+            "json",
+        ])
+        .arg(source)
+        .output()
+        .map_err(|e| format!("ffprobeを起動できませんでした：{e}"))?;
+    if !probe.status.success() {
+        return Err(String::from_utf8_lossy(&probe.stderr).trim().to_string());
+    }
+    dimensions_from_probe(&probe.stdout)
+}
+
 /// Export a saved selection without loading the clip into the editor.
 /// Existing outputs are excluded, including stale exports awaiting a manual update.
 pub fn export_saved_video(root: &Path, output_key: &str) -> Result<ExportResult, String> {
@@ -106,24 +128,7 @@ pub fn export_saved_video(root: &Path, output_key: &str) -> Result<ExportResult,
         serde_json::from_str(&fs::read_to_string(selection_path).map_err(|e| e.to_string())?)
             .map_err(|e| format!("選択範囲を読み込めませんでした：{e}"))?;
     let mask = saved_mask(data)?;
-    let probe = media_command("ffprobe")
-        .args([
-            "-v",
-            "error",
-            "-select_streams",
-            "v:0",
-            "-show_entries",
-            "stream=width,height:stream_tags=rotate:stream_side_data=rotation",
-            "-of",
-            "json",
-        ])
-        .arg(&source)
-        .output()
-        .map_err(|e| format!("ffprobeを起動できませんでした：{e}"))?;
-    if !probe.status.success() {
-        return Err(String::from_utf8_lossy(&probe.stderr).trim().to_string());
-    }
-    let (width, height) = dimensions_from_probe(&probe.stdout)?;
+    let (width, height) = probe_dimensions(&source)?;
     export_video(root, &source, output_key, width, height, mask)
 }
 

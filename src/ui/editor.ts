@@ -12,9 +12,9 @@ export const editorTemplate = /* HTML */ ` <header>
       <button
         id="openCheck"
         class="quiet"
-        title="Cloudflare Accessでログインし、モザイク漏れをAIで判定します"
+        title="開いているフォルダの画像・動画を、Cloudflareにログインして局部モザイクの漏れがないかAIで確認します"
       >
-        <i data-lucide="shield-check"></i><span>AI判定</span></button
+        <i data-lucide="shield-check"></i><span>局部モザイク確認</span></button
       ><button id="choose">
         <i data-lucide="folder-open"></i><span>動画フォルダを開く</span>
       </button>
@@ -100,6 +100,15 @@ export const editorTemplate = /* HTML */ ` <header>
               <i data-lucide="eraser"></i><span>消去</span>
             </button>
           </div>
+        </div>
+        <div class="tool-section candidate" id="candidateSection" hidden>
+          <span class="group-label">モザイク候補</span>
+          <button
+            id="applyCandidate"
+            title="AIがNGと判定した全フレームの検出枠を包む矩形を、選択範囲に追加します"
+          >
+            <i data-lucide="square-dashed"></i><span>候補を範囲に追加</span>
+          </button>
         </div>
         <label class="brush-size"
           >太さ

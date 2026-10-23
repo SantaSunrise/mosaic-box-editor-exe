@@ -8,7 +8,12 @@ import { refreshIcons, setButtonIcon } from "./ui/icons";
 import { pendingExports, runBatch } from "./batch-export";
 import { checkPanelTemplate } from "./ui/check-panel";
 import { setupCheckPanel } from "./check-ui";
-import { formatTime as formatCheckTime, isCovered } from "./check";
+import {
+  candidateFor,
+  formatTime as formatCheckTime,
+  isCovered,
+  verdictLabel,
+} from "./check";
 import "./style.css";
 import "./icons.css";
 import {
@@ -104,6 +109,15 @@ let highlightDetections: Detection[] = [];
 let checkResults: ReadonlyMap<string, FileCheckResult> = new Map();
 let checking = false;
 
+/** "モザイク候補" of the open clip, from the last check of the original folder. */
+function currentCandidate() {
+  const result = current ? checkResults.get(current.boxKey) : undefined;
+  return result ? candidateFor(result) : null;
+}
+function updateCandidateUI() {
+  $("candidateSection").hidden = !currentCandidate();
+}
+
 function legacyOperations(data: SelectionData | null): MaskOperation[] {
   if (data?.mask?.length) return structuredClone(data.mask);
   if (data?.box?.length === 4) {
@@ -130,6 +144,7 @@ function draw() {
     previewMode,
     rangeColor,
     rangeOpacity,
+    candidate: currentCandidate()?.box ?? null,
     highlights: highlightDetections.map((d) => ({
       box: d.box,
       covered: isCovered(d, operations),
@@ -178,7 +193,7 @@ function renderList() {
         const [label, status, icon] = statusOf(e);
         const verdict = checkResults.get(e.boxKey)?.verdict;
         const ai = verdict
-          ? `<span class="ai-badge ${verdict}">AI ${verdict === "ok" ? "OK" : verdict === "ng" ? "NG" : "エラー"}</span>`
+          ? `<span class="ai-badge ${verdict}">AI ${verdictLabel[verdict]}</span>`
           : "";
         return `<button class="video-row ${e === current ? "active" : ""}" data-i="${i}" aria-current="${e === current}" title="${escapeHtml(e.name)} — ${label}"><span class="file-status-icon ${status}" aria-hidden="true"><i data-lucide="${icon}"></i></span><span class="file-details"><span class="file-name">${escapeHtml(e.name)}</span><span class="status-badges"><span class="status-badge ${status}"><i data-lucide="${icon}"></i>${label}</span>${ai}</span></span></button>`;
       })
@@ -209,6 +224,7 @@ async function select(entry: VideoEntry) {
   current = entry;
   highlightDetections = [];
   resetView();
+  updateCandidateUI();
   operations = legacyOperations(entry.box);
   if (
     !operations.length &&
@@ -447,6 +463,25 @@ canvas.onpointerup = () => {
   operations.push(draft);
   draft = null;
   markChanged();
+};
+// Adds the candidate as a rectangle only when the user presses the button; the
+// existing selection is never changed on its own.
+$("applyCandidate").onclick = () => {
+  const candidate = currentCandidate();
+  if (!candidate || !current || exporting) return;
+  const [x0, y0, x1, y1] = candidate.box;
+  operations.push({
+    tool: "rect",
+    mode: "add",
+    points: [
+      [x0, y0],
+      [x1, y1],
+    ],
+  });
+  markChanged();
+  $("state").textContent = candidate.pixels
+    ? `モザイク候補を範囲に追加しました（${candidate.pixels.width}×${candidate.pixels.height}px）。変更を自動保存します…`
+    : "モザイク候補を範囲に追加しました。変更を自動保存します…";
 };
 $("undo").onclick = () => {
   operations.pop();
@@ -696,6 +731,8 @@ const checkPanel = setupCheckPanel({
   },
   resultsChanged(results) {
     checkResults = results;
+    updateCandidateUI();
+    draw();
     renderList();
   },
 });

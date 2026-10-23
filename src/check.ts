@@ -1,6 +1,16 @@
 // AI mosaic check results: verdict summary and how detections relate to the
 // selection saved in the editor. Pure functions so the Node tests can cover them.
-import type { Detection, FileCheckResult, MaskOperation, Point } from "./types";
+import type {
+  Candidate,
+  Detection,
+  FileCheckResult,
+  MaskOperation,
+  Point,
+  Verdict,
+} from "./types";
+
+/** Same rule as ng_check.py: from this probability a detection is NG; weaker ones need a look. */
+export const NG_SCORE = 0.8;
 
 /** A detection this much covered by the saved selection counts as handled. */
 export const COVERED_RATIO = 0.9;
@@ -71,6 +81,7 @@ export const isCovered = (detection: Detection, operations: MaskOperation[]) =>
 
 export type CheckSummary = {
   ok: number;
+  review: number;
   ng: number;
   error: number;
   /** NG files where some detection lies outside the saved selection. */
@@ -85,6 +96,7 @@ export function summarize(
 ): CheckSummary {
   const summary: CheckSummary = {
     ok: 0,
+    review: 0,
     ng: 0,
     error: 0,
     uncovered: 0,
@@ -106,10 +118,85 @@ export function summarize(
   return summary;
 }
 
-/** NG first, then errors, then OK; names keep their order within a group. */
+/** NG first, then errors, then "needs a look", then OK; names keep their order. */
 export function sortResults(results: FileCheckResult[]) {
-  const rank = { ng: 0, error: 1, ok: 2 } as const;
+  const rank: Record<Verdict, number> = { ng: 0, error: 1, review: 2, ok: 3 };
   return [...results].sort((a, b) => rank[a.verdict] - rank[b.verdict]);
+}
+
+export const verdictLabel: Record<Verdict, string> = {
+  ok: "OK",
+  review: "要確認",
+  ng: "NG",
+  error: "エラー",
+};
+
+const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
+
+/**
+ * Smallest rectangle containing every box, clamped to the frame. Boxes the
+ * model could not place (`located: false`, whole frame) and malformed boxes
+ * are ignored; with nothing left there is no rectangle.
+ */
+export function unionBox(
+  detections: Pick<Detection, "box" | "located">[],
+): Detection["box"] | null {
+  let x0 = Infinity,
+    y0 = Infinity,
+    x1 = -Infinity,
+    y1 = -Infinity;
+  for (const { box, located } of detections) {
+    if (!located || box.length !== 4 || !box.every(Number.isFinite)) continue;
+    const bx0 = clamp01(Math.min(box[0], box[2])),
+      bx1 = clamp01(Math.max(box[0], box[2])),
+      by0 = clamp01(Math.min(box[1], box[3])),
+      by1 = clamp01(Math.max(box[1], box[3]));
+    if (bx1 <= bx0 || by1 <= by0) continue;
+    x0 = Math.min(x0, bx0);
+    y0 = Math.min(y0, by0);
+    x1 = Math.max(x1, bx1);
+    y1 = Math.max(y1, by1);
+  }
+  return x1 > x0 && y1 > y0 ? [x0, y0, x1, y1] : null;
+}
+
+/** Normalized box to pixels of the original video; the rectangle only grows when rounded. */
+export function toPixels(
+  box: Detection["box"],
+  width: number,
+  height: number,
+): NonNullable<Candidate["pixels"]> {
+  const x = Math.floor(box[0] * width),
+    y = Math.floor(box[1] * height);
+  return {
+    x,
+    y,
+    width: Math.min(width, Math.ceil(box[2] * width)) - x,
+    height: Math.min(height, Math.ceil(box[3] * height)) - y,
+  };
+}
+
+/**
+ * "モザイク候補" of one video: the rectangle around the boxes of all frames
+ * judged NG (score >= NG_SCORE), because the position drifts as the body moves.
+ * Boxes are normalized, so resizing frames before sending (long edge 1024px)
+ * does not change them; `pixels` converts to the original resolution.
+ */
+export function candidateFor(result: FileCheckResult): Candidate | null {
+  const ng = result.frames
+    .flatMap((f) => f.detections)
+    .filter((d) => d.score >= NG_SCORE && d.located);
+  const box = unionBox(ng);
+  if (!box) return null;
+  const { width, height } = result;
+  return {
+    box,
+    pixels:
+      width && height && width > 0 && height > 0
+        ? toPixels(box, width, height)
+        : null,
+    detections: ng.length,
+  };
 }
 
 export const isAuthError = (error: unknown) =>
