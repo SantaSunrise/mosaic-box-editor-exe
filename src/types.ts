@@ -24,3 +24,63 @@ export type VideoEntry = {
   stale: boolean;
   box: SelectionData | null;
 };
+
+// AI mosaic check (src-tauri/src/check.rs, src-tauri/src/auth.rs).
+export type AuthInfo = {
+  apiBase: string;
+  email: string | null;
+  expiresAt: number | null;
+};
+export type CheckScope = "original" | "mosaic";
+export type CheckTarget = {
+  name: string;
+  path: string;
+  kind: "image" | "video";
+  source: CheckScope;
+  key: string;
+};
+export type Detection = {
+  label: string;
+  score: number;
+  /** Normalized [x0, y0, x1, y1]. */
+  box: [number, number, number, number];
+  /** False when the model gave no box and `box` is the whole frame. */
+  located: boolean;
+  boxConfidence?: number;
+};
+export type Verdict = "ok" | "review" | "ng" | "error";
+/**
+ * Smallest rectangle around the located boxes of one video: every NG box when
+ * the video is NG, every "needs a look" (or worse) box when it is 要確認.
+ */
+export type Candidate = {
+  /** Which verdict the rectangle comes from. */
+  basis: "ng" | "review";
+  /** First frame that contributed a box (for jumping to it in the editor). */
+  frameIndex: number;
+  /** Normalized [x0, y0, x1, y1], the same 0–1 space as saved selections. */
+  box: [number, number, number, number];
+  /** Same rectangle in pixels of the original video (rotation applied). */
+  pixels: { x: number; y: number; width: number; height: number } | null;
+  /** Number of detections the rectangle was built from. */
+  detections: number;
+};
+export type FrameResult = {
+  index: number;
+  time: number | null;
+  detections: Detection[];
+  error?: string;
+};
+export type FileCheckResult = {
+  name: string;
+  kind: "image" | "video";
+  source: CheckScope;
+  key: string;
+  verdict: Verdict;
+  /** Original display size, for converting normalized boxes to pixels. */
+  width?: number | null;
+  height?: number | null;
+  frames: FrameResult[];
+  model: string;
+  inputTokens: number;
+};

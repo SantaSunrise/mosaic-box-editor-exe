@@ -7,29 +7,49 @@ export const editorTemplate = /* HTML */ ` <header>
         <span class="eyebrow">LOCAL VIDEO STUDIO</span>
         <h1>Mosaic Box Editor</h1>
       </div>
+      <div class="project" id="project">フォルダ未選択</div>
     </div>
-    <button id="choose">
-      <i data-lucide="folder-open"></i><span>動画フォルダを開く</span>
-    </button>
+    <div class="header-actions">
+      <button
+        id="openCheck"
+        class="quiet"
+        title="開いているフォルダの画像・動画を、Cloudflareにログインして局部モザイクの漏れがないかAIで確認します"
+      >
+        <i data-lucide="shield-check"></i><span>局部モザイク確認</span></button
+      ><button id="choose">
+        <i data-lucide="folder-open"></i><span>動画フォルダを開く</span>
+      </button>
+    </div>
   </header>
   <section class="workspace empty" id="workspace">
     <aside aria-label="動画ライブラリ">
-      <div class="library-heading">
-        動画ライブラリ<span>選択範囲の状態</span>
-      </div>
-      <div class="project" id="project">フォルダが選択されていません</div>
-      <div class="filters" role="group" aria-label="動画の絞り込み">
-        <button class="filter active" data-filter="all">
-          すべて <b id="countAll">0</b></button
-        ><button class="filter" data-filter="missing">
-          未設定 <b id="countMissing">0</b></button
-        ><button class="filter" data-filter="ready">
-          設定済み <b id="countReady">0</b></button
-        ><button class="filter" data-filter="exported">
-          出力済み <b id="countExported">0</b></button
-        ><button class="filter" data-filter="stale">
-          更新あり <b id="countStale">0</b>
-        </button>
+      <div class="filter-bar">
+        <div class="filters" role="group" aria-label="動画の絞り込み">
+          <button class="filter active" data-filter="all">
+            すべて <b id="countAll">0</b></button
+          ><button class="filter" data-filter="missing">
+            未設定 <b id="countMissing">0</b></button
+          ><button class="filter" data-filter="ready">
+            設定済み <b id="countReady">0</b></button
+          ><button class="filter" data-filter="exported">
+            出力済み <b id="countExported">0</b></button
+          ><button class="filter" data-filter="stale">
+            更新あり <b id="countStale">0</b>
+          </button>
+        </div>
+        <div
+          class="filters ai-filters"
+          role="group"
+          aria-label="AI判定での絞り込み"
+        >
+          <button class="filter" data-filter="ai-ng">
+            AI NG <b id="countAiNg">0</b></button
+          ><button class="filter" data-filter="ai-review">
+            AI要確認 <b id="countAiReview">0</b></button
+          ><button class="filter" data-filter="ai-ok">
+            AI OK <b id="countAiOk">0</b>
+          </button>
+        </div>
       </div>
       <div id="videos" class="videos">
         <p class="list-empty">
@@ -42,8 +62,8 @@ export const editorTemplate = /* HTML */ ` <header>
           disabled
           title="選択範囲が保存済みで、まだ出力していない動画が対象です"
         >
-          <span>まとめて書き出す</span><b id="batchCount">0</b></button
-        ><span class="batch-help">範囲保存済み・未出力のみ</span>
+          <span>まとめて書き出す</span><b id="batchCount">0</b>
+        </button>
         <div id="batchProgress" hidden>
           <progress
             id="batchMeter"
@@ -92,6 +112,15 @@ export const editorTemplate = /* HTML */ ` <header>
               <i data-lucide="eraser"></i><span>消去</span>
             </button>
           </div>
+        </div>
+        <div class="tool-section candidate" id="candidateSection" hidden>
+          <span class="group-label" id="candidateLabel">モザイク候補</span>
+          <button
+            id="applyCandidate"
+            title="AIがNG（要確認のみの動画は要確認）と判定した全フレームの検出枠を包む矩形を、選択範囲に追加します"
+          >
+            <i data-lucide="square-dashed"></i><span>候補を範囲に追加</span>
+          </button>
         </div>
         <label class="brush-size"
           >太さ

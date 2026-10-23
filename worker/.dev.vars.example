@@ -1,0 +1,3 @@
+# Copy to worker/.dev.vars for `wrangler dev`. Dummy values only.
+ACCESS_TEAM_DOMAIN=your-team.cloudflareaccess.com
+ACCESS_AUD=0000000000000000000000000000000000000000000000000000000000000000

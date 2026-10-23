@@ -6,6 +6,18 @@ import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { open } from "@tauri-apps/plugin-dialog";
 import { refreshIcons, setButtonIcon } from "./ui/icons";
 import { pendingExports, runBatch } from "./batch-export";
+import { checkPanelTemplate } from "./ui/check-panel";
+import { setupCheckPanel } from "./check-ui";
+import { createThumbnailLoader, splitPath } from "./library";
+import {
+  aiFilterVerdict,
+  candidateFor,
+  candidateLabel,
+  countVerdicts,
+  formatTime as formatCheckTime,
+  isCovered,
+  verdictLabel,
+} from "./check";
 import "./style.css";
 import "./icons.css";
 import {
@@ -22,6 +34,8 @@ import type {
   SelectionData,
   ExportResult,
   VideoEntry,
+  Detection,
+  FileCheckResult,
 } from "./types";
 import { rangeColors, rangeOpacities } from "./appearance";
 let rangeColor = rangeColors[4],
@@ -38,7 +52,7 @@ try {
 }
 
 const app = document.querySelector<HTMLElement>("#app")!;
-app.innerHTML = editorTemplate;
+app.innerHTML = editorTemplate + checkPanelTemplate;
 
 const $ = <T extends HTMLElement>(id: string) =>
   document.querySelector<T>(`#${id}`)!;
@@ -94,6 +108,27 @@ let view: Viewport = { zoom: 1, x: 0, y: 0 };
 let fitted: Size = { width: 1, height: 1 };
 let pan: { pointerId: number; x: number; y: number; start: Viewport } | null =
   null;
+// AI check: detections shown on the current clip, and per-clip verdicts.
+let highlightDetections: Detection[] = [];
+let checkResults: ReadonlyMap<string, FileCheckResult> = new Map();
+let checking = false;
+
+/** "モザイク候補" of the open clip, from the last check of the original folder. */
+function currentCandidate() {
+  const result = current ? checkResults.get(current.boxKey) : undefined;
+  return result ? candidateFor(result) : null;
+}
+function updateCandidateUI() {
+  const candidate = currentCandidate();
+  $("candidateSection").hidden = !candidate;
+  $("candidateLabel").textContent = candidate
+    ? candidateLabel(candidate)
+    : "モザイク候補";
+  $("applyCandidate").title =
+    candidate?.basis === "review"
+      ? "AIが要確認と判定した全フレームの検出枠を包む矩形を、選択範囲に追加します"
+      : "AIがNGと判定した全フレームの検出枠を包む矩形を、選択範囲に追加します";
+}
 
 function legacyOperations(data: SelectionData | null): MaskOperation[] {
   if (data?.mask?.length) return structuredClone(data.mask);
@@ -121,6 +156,11 @@ function draw() {
     previewMode,
     rangeColor,
     rangeOpacity,
+    candidate: currentCandidate()?.box ?? null,
+    highlights: highlightDetections.map((d) => ({
+      box: d.box,
+      covered: isCovered(d, operations),
+    })),
   });
 }
 function animate() {
@@ -155,17 +195,86 @@ function escapeHtml(value: string) {
       ]!,
   );
 }
+// The AI filters replace the status filter while selected (one filter at a time).
+function matchesFilter(e: VideoEntry) {
+  const aiVerdict = aiFilterVerdict(filter);
+  if (aiVerdict) return checkResults.get(e.boxKey)?.verdict === aiVerdict;
+  return filter === "all" || statusOf(e)[1] === filter;
+}
+// Library thumbnails: made by ffmpeg on demand, three at a time, only for rows
+// that scroll into view, and kept in memory for the opened folder.
+const thumbnails = createThumbnailLoader(
+  (path) => invoke<string>("video_thumbnail", { root, path }),
+  3,
+);
+// Drive and folder name stay readable; only the middle shrinks ("C:\Users\ow…\shoot3").
+function pathMarkup(path: string) {
+  const { head, middle, tail, separator } = splitPath(path);
+  return (
+    `<span class="p-head">${escapeHtml(head)}</span>` +
+    (middle
+      ? `<span class="p-mid">${escapeHtml(middle)}</span><span class="p-sep">${escapeHtml(separator)}</span>`
+      : "") +
+    `<span class="p-tail">${escapeHtml(tail)}</span>`
+  );
+}
+let thumbObserver: IntersectionObserver | null = null;
+function thumbMarkup(e: VideoEntry) {
+  const url = thumbnails.cached(e.path);
+  return `<span class="thumb ${url ? "loaded" : ""}" data-path="${escapeHtml(e.path)}" aria-hidden="true">${
+    url ? `<img src="${url}" alt="" />` : '<i data-lucide="film"></i>'
+  }</span>`;
+}
+function showThumbnail(el: HTMLElement) {
+  const path = el.dataset.path!;
+  void thumbnails.request(path).then((url) => {
+    if (!url || !el.isConnected) return;
+    el.classList.add("loaded");
+    el.innerHTML = `<img src="${url}" alt="" />`;
+    thumbObserver?.unobserve(el);
+  });
+}
+function watchThumbnails() {
+  thumbObserver?.disconnect();
+  const pending = $("videos").querySelectorAll<HTMLElement>(
+    ".thumb:not(.loaded)",
+  );
+  if (typeof IntersectionObserver === "undefined") {
+    pending.forEach(showThumbnail);
+    return;
+  }
+  thumbObserver = new IntersectionObserver(
+    (changes) => {
+      for (const change of changes) {
+        const el = change.target as HTMLElement;
+        if (change.isIntersecting) showThumbnail(el);
+        else thumbnails.cancel(el.dataset.path!);
+      }
+    },
+    { root: $("videos"), rootMargin: "120px 0px" },
+  );
+  pending.forEach((el) => thumbObserver!.observe(el));
+}
 function renderList() {
   const visible = entries
     .map((e, i) => ({ e, i }))
-    .filter(({ e }) => filter === "all" || statusOf(e)[1] === filter);
+    .filter(({ e }) => matchesFilter(e));
   $("videos").innerHTML =
     visible
       .map(({ e, i }) => {
         const [label, status, icon] = statusOf(e);
-        return `<button class="video-row ${e === current ? "active" : ""}" data-i="${i}" aria-current="${e === current}" title="${escapeHtml(e.name)} — ${label}"><span class="file-status-icon ${status}" aria-hidden="true"><i data-lucide="${icon}"></i></span><span class="file-details"><span class="file-name">${escapeHtml(e.name)}</span><span class="status-badge ${status}"><i data-lucide="${icon}"></i>${label}</span></span></button>`;
+        const verdict = checkResults.get(e.boxKey)?.verdict;
+        const ai = verdict
+          ? `<span class="ai-badge ${verdict}">AI ${verdictLabel[verdict]}</span>`
+          : "";
+        return `<button class="video-row ${e === current ? "active" : ""}" data-i="${i}" aria-current="${e === current}" title="${escapeHtml(e.name)} — ${label}">${thumbMarkup(e)}<span class="file-details"><span class="file-name">${escapeHtml(e.name)}</span><span class="status-badges"><span class="status-badge ${status}"><i data-lucide="${icon}"></i>${label}</span>${ai}</span></span></button>`;
       })
-      .join("") || '<p class="list-empty">該当する動画はありません</p>';
+      .join("") ||
+    `<p class="list-empty">${
+      aiFilterVerdict(filter) && !checkResults.size
+        ? "AI判定の結果がありません。<br />「局部モザイク確認」を実行してください"
+        : "該当する動画はありません"
+    }</p>`;
   $("countAll").textContent = String(entries.length);
   for (const [id, status] of [
     ["countMissing", "missing"],
@@ -177,12 +286,20 @@ function renderList() {
       entries.filter((e) => statusOf(e)[1] === status).length,
     );
   }
+  const verdicts = countVerdicts(
+    entries.map((e) => e.boxKey),
+    checkResults,
+  );
+  $("countAiNg").textContent = String(verdicts.ng);
+  $("countAiReview").textContent = String(verdicts.review);
+  $("countAiOk").textContent = String(verdicts.ok);
   document
     .querySelectorAll<HTMLButtonElement>(".video-row")
     .forEach(
       (el) => (el.onclick = () => select(entries[Number(el.dataset.i)])),
     );
   refreshIcons($("videos"));
+  watchThumbnails();
   updateBatchButton();
 }
 async function select(entry: VideoEntry) {
@@ -190,7 +307,9 @@ async function select(entry: VideoEntry) {
   if (current && dirty) await saveCurrent(true);
   if (operations.length) lastMask = structuredClone(operations);
   current = entry;
+  highlightDetections = [];
   resetView();
+  updateCandidateUI();
   operations = legacyOperations(entry.box);
   if (
     !operations.length &&
@@ -219,7 +338,7 @@ async function select(entry: VideoEntry) {
 
 let openingProject = false;
 async function openProject(selected: string) {
-  if (openingProject || exporting) return;
+  if (openingProject || exporting || checking) return;
   openingProject = true;
   updateBatchButton();
   for (const id of ["choose", "dropZone"]) $(id).setAttribute("disabled", "");
@@ -233,9 +352,11 @@ async function openProject(selected: string) {
     player.pause();
     root = selected;
     entries = scanned;
+    checkPanel.reset();
     $("batchProgress").hidden = true;
     $("batchErrors").hidden = true;
-    $("project").textContent = root;
+    thumbnails.clear();
+    $("project").innerHTML = pathMarkup(root);
     $("project").title = root;
     current = null;
     operations = [];
@@ -285,7 +406,7 @@ async function openProject(selected: string) {
   }
 }
 async function chooseProject() {
-  if (exporting) return;
+  if (exporting || checking) return;
   try {
     const selected = await open({
       directory: true,
@@ -428,6 +549,25 @@ canvas.onpointerup = () => {
   operations.push(draft);
   draft = null;
   markChanged();
+};
+// Adds the candidate as a rectangle only when the user presses the button; the
+// existing selection is never changed on its own.
+$("applyCandidate").onclick = () => {
+  const candidate = currentCandidate();
+  if (!candidate || !current || exporting) return;
+  const [x0, y0, x1, y1] = candidate.box;
+  operations.push({
+    tool: "rect",
+    mode: "add",
+    points: [
+      [x0, y0],
+      [x1, y1],
+    ],
+  });
+  markChanged();
+  $("state").textContent = candidate.pixels
+    ? `${candidateLabel(candidate)}を範囲に追加しました（${candidate.pixels.width}×${candidate.pixels.height}px）。変更を自動保存します…`
+    : `${candidateLabel(candidate)}を範囲に追加しました。変更を自動保存します…`;
 };
 $("undo").onclick = () => {
   operations.pop();
@@ -629,6 +769,59 @@ $("exportBatch").onclick = async () => {
   }
 };
 updateBatchButton();
+
+function whenMetadata(target: HTMLVideoElement) {
+  if (target.readyState >= HTMLMediaElement.HAVE_METADATA)
+    return Promise.resolve();
+  return new Promise<void>((resolve) => {
+    const done = () => {
+      target.removeEventListener("loadedmetadata", done);
+      target.removeEventListener("error", done);
+      resolve();
+    };
+    target.addEventListener("loadedmetadata", done);
+    target.addEventListener("error", done);
+  });
+}
+const checkPanel = setupCheckPanel({
+  root: () => root,
+  busy: () => exporting || openingProject,
+  setChecking(busy) {
+    checking = busy;
+    for (const id of ["choose", "dropZone"])
+      $(id).toggleAttribute("disabled", busy || exporting);
+  },
+  operationsFor(key) {
+    const entry = entries.find((e) => e.boxKey === key);
+    if (entry === current) return operations;
+    return legacyOperations(entry?.box ?? null);
+  },
+  canOpen: (key) => entries.some((e) => e.boxKey === key),
+  async openDetections(key, frame) {
+    const entry = entries.find((e) => e.boxKey === key);
+    if (!entry || exporting) return;
+    await select(entry);
+    highlightDetections = frame.detections;
+    player.pause();
+    if (frame.time !== null) {
+      await whenMetadata(video);
+      player.seek(frame.time);
+    }
+    const suspects = frame.detections.filter(
+      (d) => !isCovered(d, operations),
+    ).length;
+    $("state").textContent =
+      `AI判定：${formatCheckTime(frame.time)} のフレームで${frame.detections.length}件検出` +
+      (suspects ? `（範囲外 ${suspects}件：赤い点線）` : "（すべて範囲内）");
+    draw();
+  },
+  resultsChanged(results) {
+    checkResults = results;
+    updateCandidateUI();
+    draw();
+    renderList();
+  },
+});
 
 const seek = $("seek") as HTMLInputElement,
   volume = $("volume") as HTMLInputElement;

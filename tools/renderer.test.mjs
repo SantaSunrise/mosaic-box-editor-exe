@@ -75,3 +75,89 @@ test("reuses unchanged geometry and invalidates after clearing, drawing and resi
   });
   assert.equal(paths.length, 7);
 });
+test("AI check highlights are outlined even without a selection", (t) => {
+  const strokes = [];
+  const dashes = [];
+  const surface = () => ({
+    width: 300,
+    height: 150,
+    getContext: () => ({
+      clearRect() {},
+      save() {},
+      restore() {},
+      setLineDash(pattern) {
+        dashes.push(pattern);
+      },
+      strokeRect(...coords) {
+        strokes.push(coords);
+      },
+    }),
+  });
+  const original = globalThis.document;
+  globalThis.document = { createElement: surface };
+  t.after(() => {
+    if (original) globalThis.document = original;
+    else delete globalThis.document;
+  });
+  createRenderer(
+    surface(),
+    {},
+  )({
+    fitted: { width: 800, height: 400 },
+    operations: [],
+    draft: null,
+    previewMode: "region",
+    rangeColor: { rgb: "1,2,3" },
+    rangeOpacity: { alpha: 0.3 },
+    highlights: [
+      { box: [0.1, 0.25, 0.3, 0.5], covered: false },
+      { box: [0, 0, 1, 1], covered: true },
+    ],
+  });
+  assert.deepEqual(strokes, [
+    [80, 100, 160, 100],
+    [0, 0, 800, 400],
+  ]);
+  assert.deepEqual(dashes, [[8, 5], []]);
+});
+
+test("the mosaic candidate is outlined in cyan, with or without a selection", (t) => {
+  const strokes = [];
+  const styles = [];
+  const surface = () => ({
+    width: 300,
+    height: 150,
+    getContext: () => ({
+      clearRect() {},
+      save() {},
+      restore() {},
+      setLineDash() {},
+      set strokeStyle(value) {
+        styles.push(value);
+      },
+      strokeRect(...coords) {
+        strokes.push(coords);
+      },
+    }),
+  });
+  const original = globalThis.document;
+  globalThis.document = { createElement: surface };
+  t.after(() => {
+    if (original) globalThis.document = original;
+    else delete globalThis.document;
+  });
+  const options = {
+    fitted: { width: 800, height: 400 },
+    operations: [],
+    draft: null,
+    previewMode: "region",
+    rangeColor: { rgb: "1,2,3" },
+    rangeOpacity: { alpha: 0.3 },
+  };
+  const draw = createRenderer(surface(), {});
+  draw({ ...options, candidate: [0.25, 0.5, 0.75, 1] });
+  assert.deepEqual(strokes, [[200, 200, 400, 200]]);
+  assert.deepEqual(styles, ["#4dd0e1"]);
+  draw({ ...options, candidate: null });
+  assert.equal(strokes.length, 1);
+});
