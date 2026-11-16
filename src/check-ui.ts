@@ -134,7 +134,8 @@ export function setupCheckPanel(host: CheckHost) {
         const uncovered = hitFrames.some((f) =>
           f.detections.some((d) => !isCovered(d, operations)),
         );
-        const openable = result.kind === "video" && host.canOpen(result.key);
+        // Videos and images both open in the editor (the original file).
+        const openable = host.canOpen(result.key);
         const frames = result.frames
           .filter((f) => f.detections.length || f.error)
           .map((frame) => {

@@ -34,6 +34,8 @@ pub struct VideoEntry {
     pub id: String,
     pub name: String,
     pub path: String,
+    /// "video" or "image".
+    pub kind: String,
     pub box_key: String,
     pub exported: bool,
     pub stale: bool,

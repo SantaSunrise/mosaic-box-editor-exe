@@ -13,10 +13,20 @@ type RenderOptions = {
   candidate?: [number, number, number, number] | null;
 };
 
+/** The picture under the overlay: the current video frame or a still image. */
+export type PreviewSource = {
+  element: CanvasImageSource;
+  /** Intrinsic size in pixels (0 until known). */
+  width: number;
+  height: number;
+  /** Whether a frame can be drawn now. */
+  ready: boolean;
+};
+
 /** Reuse offscreen surfaces while drawing a selection or mosaic preview. */
 export function createRenderer(
   canvas: HTMLCanvasElement,
-  source: HTMLVideoElement | (() => HTMLVideoElement),
+  source: () => PreviewSource,
 ) {
   const ctx = canvas.getContext("2d")!;
   const maskCanvas = document.createElement("canvas"),
@@ -119,7 +129,6 @@ export function createRenderer(
     highlights = [],
     candidate = null,
   }: RenderOptions) {
-    const video = typeof source === "function" ? source() : source;
     const w = Math.max(1, Math.round(fitted.width)),
       h = Math.max(1, Math.round(fitted.height));
     if (canvas.width !== w || canvas.height !== h) {
@@ -147,22 +156,21 @@ export function createRenderer(
       hadDraft = !!draft;
       blockDirty = true;
     }
-    if (
-      previewMode === "mosaic" &&
-      video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA
-    ) {
+    const media = previewMode === "mosaic" ? source() : null;
+    if (media?.ready && media.width && media.height) {
+      // Same cell size as the export (src-tauri/src/media.rs mosaic_grid).
       const block = Math.max(
           4,
-          Math.round(Math.max(video.videoWidth, video.videoHeight) / 100),
+          Math.round(Math.max(media.width, media.height) / 100),
         ),
-        cols = Math.max(1, Math.ceil(video.videoWidth / block)),
-        rows = Math.max(1, Math.ceil(video.videoHeight / block));
+        cols = Math.max(1, Math.ceil(media.width / block)),
+        rows = Math.max(1, Math.ceil(media.height / block));
       if (pixelCanvas.width !== cols || pixelCanvas.height !== rows) {
         pixelCanvas.width = cols;
         pixelCanvas.height = rows;
       }
       pixelCtx.imageSmoothingEnabled = true;
-      pixelCtx.drawImage(video, 0, 0, cols, rows);
+      pixelCtx.drawImage(media.element, 0, 0, cols, rows);
       const grid = `${w}:${h}:${cols}:${rows}`;
       if (blockDirty || cachedGrid !== grid) {
         blockifyMask(w, h, cols, rows);

@@ -19,6 +19,7 @@ export type VideoEntry = {
   id: string;
   name: string;
   path: string;
+  kind: "video" | "image";
   boxKey: string;
   exported: boolean;
   stale: boolean;

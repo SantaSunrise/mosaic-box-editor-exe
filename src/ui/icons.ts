@@ -35,6 +35,7 @@ import {
   ScanSearch,
   SquareDashed,
   Film,
+  Image as ImageIcon,
 } from "lucide";
 
 const lucideIcons = {
@@ -73,6 +74,7 @@ const lucideIcons = {
   ScanSearch,
   SquareDashed,
   Film,
+  Image: ImageIcon,
 };
 const iconMarkup = (name: string, label?: string) =>
   `<i data-lucide="${name}"></i>${label ? `<span>${label}</span>` : ""}`;

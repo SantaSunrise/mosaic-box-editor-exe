@@ -4,7 +4,7 @@ export const editorTemplate = /* HTML */ ` <header>
     <div class="brand">
       <img src="/mosaic-icon.png" alt="" />
       <div>
-        <span class="eyebrow">LOCAL VIDEO STUDIO</span>
+        <span class="eyebrow">LOCAL VIDEO &amp; IMAGE STUDIO</span>
         <h1>Mosaic Box Editor</h1>
       </div>
       <div class="project" id="project">フォルダ未選択</div>
@@ -17,14 +17,14 @@ export const editorTemplate = /* HTML */ ` <header>
       >
         <i data-lucide="shield-check"></i><span>局部モザイク確認</span></button
       ><button id="choose">
-        <i data-lucide="folder-open"></i><span>動画フォルダを開く</span>
+        <i data-lucide="folder-open"></i><span>フォルダを開く</span>
       </button>
     </div>
   </header>
   <section class="workspace empty" id="workspace">
-    <aside aria-label="動画ライブラリ">
+    <aside aria-label="ライブラリ">
       <div class="filter-bar">
-        <div class="filters" role="group" aria-label="動画の絞り込み">
+        <div class="filters" role="group" aria-label="状態での絞り込み">
           <button class="filter active" data-filter="all">
             すべて <b id="countAll">0</b></button
           ><button class="filter" data-filter="missing">
@@ -53,14 +53,14 @@ export const editorTemplate = /* HTML */ ` <header>
       </div>
       <div id="videos" class="videos">
         <p class="list-empty">
-          動画フォルダを開くと<br />中の動画がここに並びます
+          フォルダを開くと<br />中の動画・画像がここに並びます
         </p>
       </div>
       <div class="batch-panel">
         <button
           id="exportBatch"
           disabled
-          title="選択範囲が保存済みで、まだ出力していない動画が対象です"
+          title="選択範囲が保存済みで、まだ出力していない動画・画像が対象です"
         >
           <span>まとめて書き出す</span><b id="batchCount">0</b>
         </button>
@@ -75,7 +75,7 @@ export const editorTemplate = /* HTML */ ` <header>
           ><button id="cancelBatch" class="quiet">残りを中止</button>
         </div>
         <details id="batchErrors" hidden>
-          <summary>失敗した動画</summary>
+          <summary>失敗したファイル</summary>
           <ul id="batchErrorList"></ul>
         </details>
       </div>
@@ -117,7 +117,7 @@ export const editorTemplate = /* HTML */ ` <header>
           <span class="group-label" id="candidateLabel">モザイク候補</span>
           <button
             id="applyCandidate"
-            title="AIがNG（要確認のみの動画は要確認）と判定した全フレームの検出枠を包む矩形を、選択範囲に追加します"
+            title="AIがNG（要確認のみのファイルは要確認）と判定した全フレームの検出枠を包む矩形を、選択範囲に追加します"
           >
             <i data-lucide="square-dashed"></i><span>候補を範囲に追加</span>
           </button>
@@ -136,7 +136,7 @@ export const editorTemplate = /* HTML */ ` <header>
         <div class="edit-options">
           <label
             class="inherit"
-            title="未設定の動画を開いたとき、直前の選択範囲をコピーします"
+            title="未設定の動画・画像を開いたとき、直前の選択範囲をコピーします"
             ><input id="inherit" type="checkbox" role="switch" checked /><span
               class="switch-track"
               aria-hidden="true"
@@ -152,7 +152,10 @@ export const editorTemplate = /* HTML */ ` <header>
       <div class="stage" id="stage">
         <div class="video-plane" id="videoPlane">
           <video id="video" playsinline></video
-          ><canvas id="overlay" aria-label="動画のモザイク範囲を選択"></canvas>
+          ><img id="image" alt="" draggable="false" /><canvas
+            id="overlay"
+            aria-label="モザイク範囲を選択"
+          ></canvas>
         </div>
         <div id="brushCursor"></div>
         <div
@@ -167,28 +170,28 @@ export const editorTemplate = /* HTML */ ` <header>
         <button
           class="placeholder drop-zone"
           id="dropZone"
-          aria-label="動画が入ったフォルダを開く"
+          aria-label="動画・画像が入ったフォルダを開く"
         >
-          <strong id="dropTitle">3つのステップで、動画にモザイク</strong
+          <strong id="dropTitle">3つのステップで、動画・画像にモザイク</strong
           ><span id="dropDescription"
-            >動画ファイルではなく、動画が入ったフォルダを選んで始めます。</span
+            >ファイルではなく、動画・画像が入ったフォルダを選んで始めます。</span
           ><span class="workflow-steps"
             ><span class="workflow-step"
               ><b class="workflow-heading"
                 ><i data-lucide="folder-open"></i><span>フォルダを選択</span></b
-              ><span>中の動画が左側に一覧表示されます。</span></span
+              ><span>中の動画・画像が左側に一覧表示されます。</span></span
             ><i class="workflow-arrow" data-lucide="arrow-right"></i
             ><span class="workflow-step"
               ><b class="workflow-heading"
                 ><i data-lucide="scan-line"></i
                 ><span>モザイク範囲を指定</span></b
               ><span
-                >動画を選んで範囲を指定。範囲は自動保存されます。</span
+                >ファイルを選んで範囲を指定。範囲は自動保存されます。</span
               ></span
             ><i class="workflow-arrow" data-lucide="arrow-right"></i
             ><span class="workflow-step"
               ><b class="workflow-heading"
-                ><i data-lucide="download"></i><span>動画を書き出す</span></b
+                ><i data-lucide="download"></i><span>書き出す</span></b
               ><span
                 >選んだフォルダ内の <code>mosaic</code> に保存されます。</span
               ></span
@@ -196,13 +199,13 @@ export const editorTemplate = /* HTML */ ` <header>
           ><span class="drop-action"
             >ここにフォルダをドロップ ／ クリックして選ぶ</span
           ><span class="drop-formats"
-            >MP4・MOV・WebM ／ サブフォルダ内の動画にも対応</span
+            >MP4・MOV・WebM・JPG・PNG・WebP・BMP ／ サブフォルダにも対応</span
           >
         </button>
         <div class="drop-overlay" aria-hidden="true">
           <i data-lucide="folder-open"></i
           ><strong>フォルダをドロップして開く</strong
-          ><span>中の動画を一覧に読み込みます</span>
+          ><span>中の動画・画像を一覧に読み込みます</span>
         </div>
       </div>
       <div class="playback-panel">
@@ -229,7 +232,7 @@ export const editorTemplate = /* HTML */ ` <header>
               </button>
             </div>
           </div>
-          <div class="tool-section">
+          <div class="tool-section speed-section">
             <span class="control-label">速度</span>
             <div
               class="button-group compact-group speed-group"
@@ -348,13 +351,13 @@ export const editorTemplate = /* HTML */ ` <header>
         </div>
       </div>
       <footer>
-        <span id="state">動画フォルダを開いて編集を開始</span
+        <span id="state">フォルダを開いて編集を開始</span
         ><button id="saveSelection" class="quiet" disabled>
           <i data-lucide="save"></i><span>選択範囲を保存</span></button
         ><button id="saveNext" class="quiet" disabled>
           <i data-lucide="step-forward"></i><span>保存して次へ</span></button
         ><button id="exportVideo" class="primary" disabled>
-          <i data-lucide="wand-sparkles"></i><span>モザイク動画を書き出す</span>
+          <i data-lucide="wand-sparkles"></i><span>モザイクを書き出す</span>
         </button>
       </footer>
     </article>

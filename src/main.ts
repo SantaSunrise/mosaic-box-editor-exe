@@ -59,6 +59,8 @@ const $ = <T extends HTMLElement>(id: string) =>
 
 refreshIcons();
 let video = $("video") as HTMLVideoElement;
+// Still images are shown here instead of the players (workspace.image-mode).
+const image = $("image") as HTMLImageElement;
 const canvas = $("overlay") as HTMLCanvasElement;
 const standby = document.createElement("video");
 standby.className = "loop-standby";
@@ -86,7 +88,35 @@ const player = new LoopPlayer([video, standby], {
     $("state").textContent = "再生できませんでした：" + String(error);
   },
 });
-const renderPreview = createRenderer(canvas, () => video);
+const isImage = () => current?.kind === "image";
+/** Intrinsic size of the picture on the stage (0 until it has loaded). */
+function mediaSize() {
+  return isImage()
+    ? { width: image.naturalWidth, height: image.naturalHeight }
+    : { width: video.videoWidth, height: video.videoHeight };
+}
+const exportLabel = () =>
+  isImage() ? "モザイク画像を書き出す" : "モザイク動画を書き出す";
+const renderPreview = createRenderer(canvas, () =>
+  isImage()
+    ? {
+        element: image,
+        ...mediaSize(),
+        ready: image.complete && image.naturalWidth > 0,
+      }
+    : {
+        element: video,
+        ...mediaSize(),
+        ready: video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA,
+      },
+);
+image.onload = () => {
+  if (isImage()) draw();
+};
+image.onerror = () => {
+  if (isImage() && image.getAttribute("src"))
+    $("state").textContent = "画像を表示できませんでした";
+};
 let root = "",
   entries: VideoEntry[] = [],
   current: VideoEntry | null = null,
@@ -222,7 +252,9 @@ let thumbObserver: IntersectionObserver | null = null;
 function thumbMarkup(e: VideoEntry) {
   const url = thumbnails.cached(e.path);
   return `<span class="thumb ${url ? "loaded" : ""}" data-path="${escapeHtml(e.path)}" aria-hidden="true">${
-    url ? `<img src="${url}" alt="" />` : '<i data-lucide="film"></i>'
+    url
+      ? `<img src="${url}" alt="" />`
+      : `<i data-lucide="${e.kind === "image" ? "image" : "film"}"></i>`
   }</span>`;
 }
 function showThumbnail(el: HTMLElement) {
@@ -273,7 +305,7 @@ function renderList() {
     `<p class="list-empty">${
       aiFilterVerdict(filter) && !checkResults.size
         ? "AI判定の結果がありません。<br />「局部モザイク確認」を実行してください"
-        : "該当する動画はありません"
+        : "該当するファイルはありません"
     }</p>`;
   $("countAll").textContent = String(entries.length);
   for (const [id, status] of [
@@ -325,10 +357,20 @@ async function select(entry: VideoEntry) {
     dirty = false;
     $("state").textContent = operations.length
       ? "保存済みの選択を表示中"
-      : "動画上をドラッグして選択";
+      : `${entry.kind === "image" ? "画像" : "動画"}上をドラッグして選択`;
   }
   draft = null;
-  player.load(convertFileSrc(entry.path));
+  const still = entry.kind === "image";
+  $("workspace").classList.toggle("image-mode", still);
+  if (still) {
+    // Release the video decoders while a still image is open.
+    player.load(null);
+    image.src = convertFileSrc(entry.path);
+  } else {
+    image.removeAttribute("src");
+    player.load(convertFileSrc(entry.path));
+  }
+  setButtonIcon("exportVideo", "wand-sparkles", exportLabel());
   $("workspace").classList.remove("empty");
   for (const id of ["saveSelection", "saveNext", "exportVideo", "clear"])
     $(id).removeAttribute("disabled");
@@ -342,7 +384,7 @@ async function openProject(selected: string) {
   openingProject = true;
   updateBatchButton();
   for (const id of ["choose", "dropZone"]) $(id).setAttribute("disabled", "");
-  $("state").textContent = "フォルダ内の動画を読み込んでいます…";
+  $("state").textContent = "フォルダ内の動画・画像を読み込んでいます…";
   try {
     clearTimeout(autosaveTimer);
     if (current && dirty) await saveCurrent(true);
@@ -377,6 +419,8 @@ async function openProject(selected: string) {
     if (entries[0]) await select(entries[0]);
     else {
       player.load(null);
+      image.removeAttribute("src");
+      $("workspace").classList.remove("image-mode");
       $("workspace").classList.add("empty");
       for (const id of [
         "saveSelection",
@@ -386,16 +430,16 @@ async function openProject(selected: string) {
         "undo",
       ])
         $(id).setAttribute("disabled", "");
-      $("dropTitle").textContent = "このフォルダには動画がありません";
+      $("dropTitle").textContent = "このフォルダには動画・画像がありません";
       $("dropDescription").textContent =
-        "MP4・MOV・WebMが入った別のフォルダをドロップしてください。";
-      $("state").textContent = "このフォルダ以下に動画がありません";
+        "MP4・MOV・WebM・JPG・PNG・WebP・BMPが入った別のフォルダをドロップしてください。";
+      $("state").textContent = "このフォルダ以下に動画・画像がありません";
       draw();
     }
   } catch (error) {
     $("state").textContent = "フォルダを開けませんでした：" + String(error);
     if (!current) {
-      $("dropTitle").textContent = "動画が入ったフォルダを選んでください";
+      $("dropTitle").textContent = "動画・画像が入ったフォルダを選んでください";
       $("dropDescription").textContent =
         "フォルダを読み込めませんでした。フォルダ全体をドロップするか、クリックして選び直してください。";
     }
@@ -411,7 +455,7 @@ async function chooseProject() {
     const selected = await open({
       directory: true,
       multiple: false,
-      title: "動画を含むフォルダを選択",
+      title: "動画・画像を含むフォルダを選択",
     });
     if (selected) await openProject(selected);
   } catch (error) {
@@ -434,9 +478,9 @@ if (isTauri()) {
       }
     })
     .catch(() => {
-      $("dropTitle").textContent = "動画が入ったフォルダを開く";
+      $("dropTitle").textContent = "動画・画像が入ったフォルダを開く";
       $("dropDescription").textContent =
-        "クリックしてフォルダを選ぶと、中の動画が左側に一覧表示されます。";
+        "クリックしてフォルダを選ぶと、中の動画・画像が左側に一覧表示されます。";
       $("state").textContent =
         "ドラッグ＆ドロップを利用できません。クリックしてフォルダを開いてください。";
     });
@@ -628,7 +672,7 @@ $("saveNext").onclick = async () => {
     const i = current ? entries.indexOf(current) : -1;
     const next = entries.slice(i + 1).find((e) => !e.box) ?? entries[i + 1];
     if (next) await select(next);
-    else $("state").textContent = "最後の動画まで保存しました";
+    else $("state").textContent = "最後のファイルまで保存しました";
   } catch (error) {
     $("state").textContent = String(error);
   }
@@ -642,7 +686,7 @@ function updateBatchButton() {
   );
   $("exportBatch").setAttribute(
     "aria-label",
-    "未出力の動画をまとめて書き出す（" + count + "本）",
+    "未出力のファイルをまとめて書き出す（" + count + "件）",
   );
 }
 function setExporting(busy: boolean) {
@@ -680,15 +724,27 @@ $("exportVideo").onclick = async () => {
     await flushSelection();
     const target = current;
     const mask = structuredClone(operations);
-    $("state").textContent = "GPUエンコーダーを確認して書き出しています";
-    const output = await invoke<ExportResult>("export_video", {
-      root,
-      source: target.path,
-      outputKey: target.name,
-      width: video.videoWidth,
-      height: video.videoHeight,
-      mask,
-    });
+    let output: ExportResult;
+    if (target.kind === "image") {
+      // Same format and name as the original, in mosaic/. The size is read
+      // by ffprobe, with EXIF orientation applied like the preview.
+      $("state").textContent = "モザイク画像を書き出しています";
+      output = await invoke<ExportResult>("export_image", {
+        root,
+        outputKey: target.name,
+        mask,
+      });
+    } else {
+      $("state").textContent = "GPUエンコーダーを確認して書き出しています";
+      output = await invoke<ExportResult>("export_video", {
+        root,
+        source: target.path,
+        outputKey: target.name,
+        width: video.videoWidth,
+        height: video.videoHeight,
+        mask,
+      });
+    }
     target.exported = true;
     target.stale = false;
     renderList();
@@ -698,13 +754,13 @@ $("exportVideo").onclick = async () => {
     $("state").textContent = "書き出し失敗：" + String(error);
   } finally {
     setExporting(false);
-    setButtonIcon("exportVideo", "wand-sparkles", "モザイク動画を書き出す");
+    setButtonIcon("exportVideo", "wand-sparkles", exportLabel());
   }
 };
 $("cancelBatch").onclick = () => {
   cancelBatch = true;
   $("cancelBatch").setAttribute("disabled", "");
-  $("batchStatus").textContent = "この動画の完了後に停止します";
+  $("batchStatus").textContent = "処理中のファイルの完了後に停止します";
 };
 $("exportBatch").onclick = async () => {
   if (exporting || openingProject) return;
@@ -735,7 +791,7 @@ $("exportBatch").onclick = async () => {
         }
       },
       exportItem: async (entry) => {
-        await invoke<ExportResult>("export_saved_video", {
+        await invoke<ExportResult>("export_saved_media", {
           root,
           outputKey: entry.name,
         });
@@ -747,10 +803,10 @@ $("exportBatch").onclick = async () => {
     const summary =
       "一括書き出し：完了 " +
       report.completed.length +
-      "本・失敗 " +
+      "件・失敗 " +
       report.failed.length +
-      "本" +
-      (report.remaining ? "・中止 " + report.remaining + "本" : "");
+      "件" +
+      (report.remaining ? "・中止 " + report.remaining + "件" : "");
     $("batchStatus").textContent = summary;
     $("batchStatus").title = summary;
     $("state").textContent = summary + " ／ 保存先：" + root + "/mosaic";
@@ -848,6 +904,7 @@ $("play").onclick = () => {
   else player.pause();
 };
 const stepFrame = (d: number) => {
+  if (isImage()) return;
   player.pause();
   player.seek(
     Math.max(0, Math.min(video.duration || 0, video.currentTime + d / 30)),
@@ -885,6 +942,7 @@ document.addEventListener("keydown", (e) => {
     markChanged();
   } else if (e.code === "Space") {
     e.preventDefault();
+    if (isImage()) return;
     if (player.paused) void player.play();
     else player.pause();
   } else if (e.key === "ArrowLeft") {
@@ -914,9 +972,10 @@ window.onresize = draw;
 // fitted resolution, avoiding huge allocations when zooming to 800%.
 function fitVideo() {
   const stage = $("stage");
+  const size = mediaSize();
   const next = fitSize(
     { width: stage.clientWidth, height: stage.clientHeight },
-    (video.videoWidth || 16) / (video.videoHeight || 9),
+    (size.width || 16) / (size.height || 9),
   );
   if (fitted.width > 1) {
     view.x *= next.width / fitted.width;
@@ -951,7 +1010,7 @@ $("resetZoom").onclick = () => {
 $("stage").addEventListener(
   "wheel",
   (e) => {
-    if (!current || !video.videoWidth) return;
+    if (!current || !mediaSize().width) return;
     e.preventDefault();
     if (draft || pan) return;
     const stage = $("stage"),
@@ -1175,7 +1234,7 @@ function syncBrushSizePreview() {
     "px）";
 }
 function showBrushSizePreview() {
-  if (tool !== "brush" || !current || !video.videoWidth) return;
+  if (tool !== "brush" || !current || !mediaSize().width) return;
   $("brushCursor").classList.remove("visible");
   $("brushSizePreview").hidden = false;
   syncBrushSizePreview();
