@@ -32,11 +32,13 @@ pub fn video_thumbnail(root: &Path, source: &Path) -> Result<Vec<u8>, String> {
         return Err("invalid thumbnail path".into());
     }
     let _slot = THUMBNAIL_SLOTS.acquire();
-    let time = thumbnail_time(probe_duration(&source).unwrap_or(0.0));
+    // A still image has one frame and no duration to seek into.
+    let time = (!crate::project::is_image(&source))
+        .then(|| thumbnail_time(probe_duration(&source).unwrap_or(0.0)));
     let scale = format!(
         "scale={THUMB_WIDTH}:{THUMB_HEIGHT}:force_original_aspect_ratio=increase,crop={THUMB_WIDTH}:{THUMB_HEIGHT}"
     );
-    extract_jpeg_with(&source, Some(time), &scale, "6")
+    extract_jpeg_with(&source, time, &scale, "6")
 }
 
 /// `data:` URL for the webview (the CSP allows `data:` images).

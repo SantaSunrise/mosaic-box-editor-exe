@@ -27,7 +27,7 @@ test("reuses unchanged geometry and invalidates after clearing, drawing and resi
     if (original) globalThis.document = original;
     else delete globalThis.document;
   });
-  const draw = createRenderer(surface(), {});
+  const draw = createRenderer(surface(), () => ({}));
   const rect = {
     tool: "rect",
     mode: "add",
@@ -99,10 +99,7 @@ test("AI check highlights are outlined even without a selection", (t) => {
     if (original) globalThis.document = original;
     else delete globalThis.document;
   });
-  createRenderer(
-    surface(),
-    {},
-  )({
+  createRenderer(surface(), () => ({}))({
     fitted: { width: 800, height: 400 },
     operations: [],
     draft: null,
@@ -154,10 +151,70 @@ test("the mosaic candidate is outlined in cyan, with or without a selection", (t
     rangeColor: { rgb: "1,2,3" },
     rangeOpacity: { alpha: 0.3 },
   };
-  const draw = createRenderer(surface(), {});
+  const draw = createRenderer(surface(), () => ({}));
   draw({ ...options, candidate: [0.25, 0.5, 0.75, 1] });
   assert.deepEqual(strokes, [[200, 200, 400, 200]]);
   assert.deepEqual(styles, ["#4dd0e1"]);
   draw({ ...options, candidate: null });
   assert.equal(strokes.length, 1);
+});
+
+test("the mosaic preview samples a still image on the export's cell grid", (t) => {
+  const sampled = [];
+  const surface = () => ({
+    width: 300,
+    height: 150,
+    getContext: () => ({
+      beginPath() {},
+      clearRect() {},
+      fill() {},
+      rect() {},
+      save() {},
+      restore() {},
+      fillRect() {},
+      getImageData: (x, y, w, h) => ({
+        data: new Uint8ClampedArray(w * h * 4),
+      }),
+      drawImage(element, ...args) {
+        if (element === picture) sampled.push(args);
+      },
+    }),
+  });
+  const original = globalThis.document;
+  globalThis.document = { createElement: surface };
+  t.after(() => {
+    if (original) globalThis.document = original;
+    else delete globalThis.document;
+  });
+  const picture = { kind: "image" };
+  let ready = false;
+  const draw = createRenderer(surface(), () => ({
+    element: picture,
+    width: 4000,
+    height: 3000,
+    ready,
+  }));
+  const options = {
+    fitted: { width: 800, height: 600 },
+    operations: [
+      {
+        tool: "rect",
+        mode: "add",
+        points: [
+          [0.1, 0.1],
+          [0.4, 0.4],
+        ],
+      },
+    ],
+    draft: null,
+    previewMode: "mosaic",
+    rangeColor: { rgb: "1,2,3" },
+    rangeOpacity: { alpha: 0.3 },
+  };
+  draw(options);
+  assert.equal(sampled.length, 0, "not drawn before the image has loaded");
+  ready = true;
+  draw(options);
+  // 4000px wide: 40px cells, so 100 x 75 (media.rs mosaic_grid).
+  assert.deepEqual(sampled, [[0, 0, 100, 75]]);
 });

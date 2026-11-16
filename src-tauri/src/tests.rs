@@ -15,16 +15,238 @@ fn probe_dimensions_respect_rotation() {
         (1920, 1080)
     );
     assert!(dimensions_from_probe(br#"{"streams":[]}"#).is_err());
+    // Images: EXIF orientation is reported on the first decoded frame.
+    assert_eq!(
+        dimensions_from_probe(
+            br#"{"frames":[{"width":320,"height":200,"side_data_list":[{"rotation":-90},{}]}]}"#
+        )
+        .unwrap(),
+        (200, 320)
+    );
+}
+
+#[test]
+fn scans_images_next_to_videos_and_exports_them_in_their_own_format() {
+    let temp = tempfile::tempdir().unwrap();
+    fs::create_dir_all(temp.path().join("stills")).unwrap();
+    for file in ["clip.mov", "stills/a.PNG", "stills/b.jpeg", "notes.txt"] {
+        fs::write(temp.path().join(file), []).unwrap();
+    }
+    let entries = scan_project(temp.path()).unwrap();
+    let listed: Vec<_> = entries
+        .iter()
+        .map(|e| (e.name.as_str(), e.kind.as_str(), e.box_key.as_str()))
+        .collect();
+    assert_eq!(
+        listed,
+        vec![
+            ("clip.mov", "video", "clip"),
+            ("stills/a.PNG", "image", "stills/a"),
+            ("stills/b.jpeg", "image", "stills/b"),
+        ]
+    );
+    // An image counts as exported when its same-format copy is in mosaic/.
+    fs::create_dir_all(temp.path().join("mosaic/stills")).unwrap();
+    fs::write(temp.path().join("mosaic/stills/b.jpeg"), []).unwrap();
+    fs::write(temp.path().join("mosaic/stills/a.mp4"), []).unwrap();
+    let entries = scan_project(temp.path()).unwrap();
+    assert!(!entries[1].exported);
+    assert!(entries[2].exported);
+    // Batch export skips it like an exported video.
+    assert!(export_saved_media(temp.path(), "stills/b.jpeg")
+        .unwrap_err()
+        .contains("出力済み"));
+    assert!(export_image(temp.path(), "clip.mov", vec![]).is_err());
+}
+
+/// Writes `path` with the bundled ffmpeg from the input `args`.
+fn make_media(path: &Path, args: &[&str]) {
+    let result = media_command("ffmpeg")
+        .args(["-v", "error", "-y"])
+        .args(args)
+        .arg(path)
+        .output()
+        .unwrap();
+    assert!(
+        result.status.success(),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+}
+
+/// RGBA of every pixel, decoded by ffmpeg (EXIF orientation applied).
+fn decode_rgba(path: &Path) -> (usize, usize, Vec<u8>) {
+    let (width, height) = crate::media::probe_dimensions(path).unwrap();
+    let result = media_command("ffmpeg")
+        .args(["-v", "error", "-i"])
+        .arg(path)
+        .args(["-frames:v", "1", "-f", "rawvideo", "-pix_fmt", "rgba", "-"])
+        .output()
+        .unwrap();
+    assert!(result.status.success());
+    assert_eq!(result.stdout.len(), width * height * 4);
+    (width, height, result.stdout)
+}
+
+/// Inserts an EXIF APP1 segment with `Orientation = 6` (rotate 90° clockwise).
+fn add_exif_rotation(path: &Path) {
+    let jpeg = fs::read(path).unwrap();
+    let tiff = [
+        0x4D, 0x4D, 0x00, 0x2A, 0, 0, 0, 8, 0, 1, 0x01, 0x12, 0, 3, 0, 0, 0, 1, 0, 6, 0, 0, 0, 0,
+        0, 0,
+    ];
+    let mut payload = b"Exif\0\0".to_vec();
+    payload.extend_from_slice(&tiff);
+    let length = (payload.len() + 2) as u16;
+    let mut out = jpeg[..2].to_vec();
+    out.extend_from_slice(&[0xFF, 0xE1]);
+    out.extend_from_slice(&length.to_be_bytes());
+    out.extend_from_slice(&payload);
+    out.extend_from_slice(&jpeg[2..]);
+    fs::write(path, out).unwrap();
+}
+
+#[test]
+#[ignore = "requires local ffmpeg and ffprobe"]
+fn image_export_pixelates_only_the_selection_and_keeps_the_format() {
+    let temp = tempfile::tempdir().unwrap();
+    let pattern = [
+        "-f",
+        "lavfi",
+        "-i",
+        "testsrc2=size=320x200",
+        "-frames:v",
+        "1",
+    ];
+    let rect = |x0: f64, y0: f64, x1: f64, y1: f64| MaskOperation {
+        tool: "rect".into(),
+        mode: "add".into(),
+        points: vec![[x0, y0], [x1, y1]],
+        size: None,
+    };
+    for name in [
+        "still.png",
+        "still.jpg",
+        "still.webp",
+        "still.bmp",
+        "100%.png",
+    ] {
+        let source = temp.path().join(name);
+        make_media(&source, &pattern);
+        let output = export_image(temp.path(), name, vec![rect(0.0, 0.0, 0.5, 1.0)]).unwrap();
+        assert_eq!(
+            Path::new(&output.path),
+            temp.path().join("mosaic").join(name)
+        );
+        let (w, h, before) = decode_rgba(&source);
+        let (ow, oh, after) = decode_rgba(Path::new(&output.path));
+        assert_eq!((ow, oh), (w, h), "{name}");
+        let lossless = name.ends_with(".png") || name.ends_with(".bmp");
+        let pixel = |data: &[u8], x: usize, y: usize| {
+            let i = (y * w + x) * 4;
+            [data[i] as i32, data[i + 1] as i32, data[i + 2] as i32]
+        };
+        let distance =
+            |a: [i32; 3], b: [i32; 3]| (0..3).map(|c| (a[c] - b[c]).abs()).max().unwrap();
+        // Left half: every 4x4 cell (320px wide: 4px cells) is one colour,
+        // within the encoder's rounding for JPEG and WebP.
+        let tolerance = if lossless { 0 } else { 24 };
+        for cy in 0..h / 4 {
+            for cx in 0..w / 2 / 4 {
+                let corner = pixel(&after, cx * 4, cy * 4);
+                let opposite = pixel(&after, cx * 4 + 3, cy * 4 + 3);
+                assert!(
+                    distance(corner, opposite) <= tolerance,
+                    "{name}: cell {cx},{cy} not flat"
+                );
+            }
+        }
+        // Right half: untouched (exact for lossless formats).
+        let tolerance = if lossless { 0 } else { 40 };
+        for y in [0, h / 2, h - 1] {
+            for x in [w * 3 / 4, w - 1] {
+                assert!(
+                    distance(pixel(&after, x, y), pixel(&before, x, y)) <= tolerance,
+                    "{name}: {x},{y} changed"
+                );
+            }
+        }
+    }
+    // The whole picture changes when the whole picture is selected.
+    let png = temp.path().join("mosaic/still.png");
+    let first = fs::read(&png).unwrap();
+    fs::remove_file(&png).unwrap();
+    save_selection(
+        temp.path(),
+        "still",
+        "still.png",
+        "still",
+        vec![rect(0.0, 0.0, 1.0, 1.0)],
+    )
+    .unwrap();
+    export_saved_media(temp.path(), "still.png").unwrap();
+    assert_ne!(fs::read(&png).unwrap(), first);
+
+    // Transparency survives, inside and outside the selection: left half
+    // transparent, right half opaque, top half selected.
+    for name in ["half.png", "half.webp"] {
+        make_media(
+            &temp.path().join(name),
+            &[
+                "-f",
+                "lavfi",
+                "-i",
+                "color=c=green:size=64x48,format=rgba,geq=r=r(X\\,Y):g=g(X\\,Y):b=b(X\\,Y):a=if(lt(X\\,32)\\,0\\,255)",
+                "-frames:v",
+                "1",
+            ],
+        );
+        let output = export_image(temp.path(), name, vec![rect(0.0, 0.0, 1.0, 0.5)]).unwrap();
+        let (w, _, pixels) = decode_rgba(Path::new(&output.path));
+        let alpha = |x: usize, y: usize| pixels[(y * w + x) * 4 + 3];
+        assert_eq!(
+            [alpha(5, 5), alpha(50, 5), alpha(5, 40), alpha(50, 40)],
+            [0, 255, 0, 255],
+            "{name}"
+        );
+    }
+
+    // EXIF-rotated JPEG: the mask is placed on the picture as displayed (200x320).
+    let rotated = temp.path().join("rotated.jpg");
+    make_media(&rotated, &pattern);
+    add_exif_rotation(&rotated);
+    let output = export_image(temp.path(), "rotated.jpg", vec![rect(0.0, 0.0, 1.0, 0.5)]).unwrap();
+    let (w, h, after) = decode_rgba(Path::new(&output.path));
+    assert_eq!((w, h), (200, 320));
+    let (_, _, before) = decode_rgba(&rotated);
+    let diff = |y: usize| {
+        (0..w)
+            .map(|x| {
+                let i = (y * w + x) * 4;
+                (0..3)
+                    .map(|c| (after[i + c] as i32 - before[i + c] as i32).abs())
+                    .sum::<i32>()
+            })
+            .sum::<i32>()
+            / w as i32
+    };
+    // Top half mosaicked (large change), bottom half only re-encoded.
+    assert!(
+        diff(h / 4) > 3 * diff(h * 3 / 4).max(1),
+        "{} vs {}",
+        diff(h / 4),
+        diff(h * 3 / 4)
+    );
 }
 
 #[test]
 fn batch_export_rejects_unsafe_paths_and_preserves_existing_output() {
     let temp = tempfile::tempdir().unwrap();
-    assert!(export_saved_video(temp.path(), "../cut.mp4").is_err());
+    assert!(export_saved_media(temp.path(), "../cut.mp4").is_err());
     fs::create_dir_all(temp.path().join("mosaic")).unwrap();
     let output = temp.path().join("mosaic/cut.mp4");
     fs::write(&output, b"existing export").unwrap();
-    assert!(export_saved_video(temp.path(), "cut.mp4")
+    assert!(export_saved_media(temp.path(), "cut.mp4")
         .unwrap_err()
         .contains("出力済み"));
     assert_eq!(fs::read(output).unwrap(), b"existing export");
@@ -69,7 +291,7 @@ fn batch_export_uses_saved_selection_and_creates_video() {
         }],
     )
     .unwrap();
-    let output = export_saved_video(temp.path(), "clip.mp4").unwrap();
+    let output = export_saved_media(temp.path(), "clip.mp4").unwrap();
     assert!(fs::metadata(&output.path).unwrap().len() > 0);
     let probe = media_command("ffprobe")
         .args([
@@ -234,6 +456,7 @@ mod ai_check {
             "scene/b.png",
             "scene/notes.txt",
             "mosaic/scene/c.mp4",
+            "mosaic/scene/d.png",
         ] {
             fs::write(temp.path().join(file), []).unwrap();
         }
@@ -247,9 +470,12 @@ mod ai_check {
             vec![("a.MP4", "video", "a"), ("scene/b.png", "image", "scene/b")]
         );
         let exported = list_check_targets(temp.path(), "mosaic").unwrap();
-        assert_eq!(exported.len(), 1);
+        assert_eq!(exported.len(), 2);
         assert_eq!(exported[0].name, "scene/c.mp4");
         assert_eq!(exported[0].key, "scene/c");
+        // Exported images keep their format and are checked as images.
+        assert_eq!(exported[1].name, "scene/d.png");
+        assert_eq!(exported[1].kind, "image");
         assert!(list_check_targets(temp.path(), "../x").is_err());
     }
 

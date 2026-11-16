@@ -34,8 +34,8 @@ if ($LASTEXITCODE -ne 0) { throw 'Could not collect dependency licenses.' }
 Mosaic Box Editor v$version
 
 mosaic-box-editor.exe を開いてください。
-動画が入っているフォルダを選び、範囲を指定して書き出します。
-出力は選んだフォルダ内の mosaic、選択範囲は boxes に保存されます。
+動画・画像が入っているフォルダを選び、範囲を指定して書き出します。
+出力は選んだフォルダ内の mosaic（動画はMP4、画像は元と同じ形式）、選択範囲は boxes に保存されます。
 
 ffmpeg / ffprobe は同梱済みです。別途インストールは不要です。
 移動するときは bin と licenses を含むこのフォルダ全体を移動してください。

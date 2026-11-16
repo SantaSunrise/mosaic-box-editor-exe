@@ -129,9 +129,22 @@ async fn export_video(
 }
 
 #[tauri::command]
-async fn export_saved_video(root: String, output_key: String) -> Result<ExportResult, String> {
+async fn export_image(
+    root: String,
+    output_key: String,
+    mask: Vec<MaskOperation>,
+) -> Result<ExportResult, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        mosaic_box_core::export_saved_video(std::path::Path::new(&root), &output_key)
+        mosaic_box_core::export_image(std::path::Path::new(&root), &output_key, mask)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+async fn export_saved_media(root: String, output_key: String) -> Result<ExportResult, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        mosaic_box_core::export_saved_media(std::path::Path::new(&root), &output_key)
     })
     .await
     .map_err(|e| e.to_string())?
@@ -151,7 +164,8 @@ fn main() {
             video_thumbnail,
             save_selection,
             export_video,
-            export_saved_video,
+            export_image,
+            export_saved_media,
             delete_selection,
             auth_login,
             auth_status,

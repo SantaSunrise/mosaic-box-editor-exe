@@ -3,7 +3,10 @@
 //!
 //! The pass/fail rule follows the team's mosaic_check.py: ten frames per
 //! video, and a single detection in any frame makes the whole file NG.
-use crate::{media::media_command, project::collect_media};
+use crate::{
+    media::media_command,
+    project::{collect_media, IMAGE_EXTENSIONS},
+};
 use base64::{engine::general_purpose::STANDARD, Engine};
 use serde::{Deserialize, Serialize};
 use std::{
@@ -30,7 +33,6 @@ pub const MAX_EXTRACTIONS: usize = 6;
 pub const MAX_RETRIES: u32 = 3;
 const RETRY_BASE: Duration = Duration::from_secs(1);
 const RETRY_AFTER_CAP: Duration = Duration::from_secs(30);
-pub const IMAGE_EXTENSIONS: &[&str] = &["jpg", "jpeg", "png", "webp", "bmp"];
 
 /// Counting semaphore. The app-wide instances below bound work across every
 /// file being checked, not just within one.
@@ -149,7 +151,13 @@ pub fn list_check_targets(root: &Path, scope: &str) -> Result<Vec<CheckTarget>, 
                 .copied()
                 .collect(),
         ),
-        "mosaic" => (root.join("mosaic"), vec!["mp4"]),
+        // Exported videos are always MP4; exported images keep their format.
+        "mosaic" => (
+            root.join("mosaic"),
+            std::iter::once("mp4")
+                .chain(IMAGE_EXTENSIONS.iter().copied())
+                .collect(),
+        ),
         _ => return Err("invalid check scope".into()),
     };
     if !base.is_dir() {

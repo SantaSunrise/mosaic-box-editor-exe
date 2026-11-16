@@ -15,6 +15,24 @@ fn safe_id(id: &str) -> bool {
 }
 
 pub(crate) const VIDEO_EXTENSIONS: &[&str] = &["mp4", "webm", "mov"];
+pub(crate) const IMAGE_EXTENSIONS: &[&str] = &["jpg", "jpeg", "png", "webp", "bmp"];
+
+/// True for the still-image formats the editor opens and exports.
+pub(crate) fn is_image(path: &Path) -> bool {
+    path.extension()
+        .and_then(|x| x.to_str())
+        .is_some_and(|ext| IMAGE_EXTENSIONS.contains(&ext.to_ascii_lowercase().as_str()))
+}
+
+/// Where the mosaicked copy of `relative` goes: videos become MP4, images
+/// keep their own format and file name.
+pub(crate) fn output_path(root: &Path, relative: &Path) -> PathBuf {
+    let mut output = root.join("mosaic").join(relative);
+    if !is_image(relative) {
+        output.set_extension("mp4");
+    }
+    output
+}
 
 /// Media below `root`, skipping generated folders. Sorted case-insensitively.
 pub(crate) fn collect_media(root: &Path, extensions: &[&str]) -> Result<Vec<PathBuf>, String> {
@@ -65,7 +83,12 @@ pub fn scan_project(root: &Path) -> Result<Vec<VideoEntry>, String> {
     fs::create_dir_all(root.join("boxes")).map_err(|e| e.to_string())?;
     fs::create_dir_all(root.join("mosaic")).map_err(|e| e.to_string())?;
 
-    collect_media(root, VIDEO_EXTENSIONS)?
+    let extensions: Vec<&str> = VIDEO_EXTENSIONS
+        .iter()
+        .chain(IMAGE_EXTENSIONS)
+        .copied()
+        .collect();
+    collect_media(root, &extensions)?
         .into_iter()
         .map(|path| {
             let relative = path.strip_prefix(root).map_err(|e| e.to_string())?;
@@ -78,8 +101,8 @@ pub fn scan_project(root: &Path) -> Result<Vec<VideoEntry>, String> {
                 .unwrap_or("")
                 .to_string();
             let box_path = root.join("boxes").join(&key_path).with_extension("json");
-            let mut mosaic_path = root.join("mosaic").join(relative);
-            mosaic_path.set_extension("mp4");
+            let mosaic_path = output_path(root, relative);
+            let kind = if is_image(relative) { "image" } else { "video" };
             let source_time = fs::metadata(&path).and_then(|m| m.modified()).ok();
             let selection_time = fs::metadata(&box_path).and_then(|m| m.modified()).ok();
             let output_time = fs::metadata(&mosaic_path).and_then(|m| m.modified()).ok();
@@ -94,6 +117,7 @@ pub fn scan_project(root: &Path) -> Result<Vec<VideoEntry>, String> {
                 id,
                 name,
                 path: path.to_string_lossy().into_owned(),
+                kind: kind.into(),
                 box_key,
                 exported,
                 stale,
